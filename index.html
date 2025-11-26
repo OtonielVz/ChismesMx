@@ -46,6 +46,10 @@
         /* Avatars */
         .avatar-option.selected { border-color: #9333ea; background-color: #f3e8ff; transform: scale(1.1); }
         
+        /* Like Animation */
+        .like-anim { animation: likeBounce 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        @keyframes likeBounce { 0% { transform: scale(1); } 50% { transform: scale(1.3); } 100% { transform: scale(1); } }
+
         /* Z-Index Layers */
         #config-overlay { z-index: 99999; }
         #toast { z-index: 100000; transition: all 0.5s ease; }
@@ -189,7 +193,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, doc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, doc, getDoc, updateDoc, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Configuración de Fechas (Day.js)
         dayjs.locale('es');
@@ -213,9 +217,12 @@
         let appMode = 'local';
         let currentCategory = 'picante';
         let userProfile = { avatar: '👻', nickname: '@AnonimoMX' };
-        let activeThreadId = null; // ID del chisme abierto actualmente
-        let unsubscribeReplies = null; // Para detener el listener del chat
-        const processedDocs = new Set();
+        let activeThreadId = null; 
+        let unsubscribeReplies = null; 
+        
+        // Estado de Likes y Marcadores
+        let likedChismes = new Set(JSON.parse(localStorage.getItem('mx_liked_chismes') || '[]'));
+        let markers = {}; // Almacenar referencias a los marcadores
 
         // Inicializar
         async function initApp() {
@@ -259,13 +266,13 @@
 
         // --- MAPA & MARCADORES ---
         
-        function renderMarker(id, data) {
-            if (processedDocs.has(id)) return;
-            processedDocs.add(id);
-            
+        // Función unificada para crear o actualizar marcadores
+        function updateOrRenderMarker(id, data) {
             const colors = { 'picante': '#ef4444', 'amor': '#ec4899', 'barrio': '#3b82f6' };
             const c = colors[data.category] || colors.picante;
             const timeAgo = dayjs(data.timestamp).fromNow();
+            const isLiked = likedChismes.has(id);
+            const likesCount = data.likes || 0;
 
             const icon = L.divIcon({
                 className: 'custom-div-icon',
@@ -275,45 +282,139 @@
                 iconSize: [36, 36], iconAnchor: [18, 36]
             });
 
-            const marker = L.marker([data.lat, data.lng], {icon}).addTo(map);
-            
-            // Popup mejorado con botón para abrir Hilo
-            // Usamos un truco: guardamos la data en el elemento DOM para recuperarla al abrir el hilo
-            const popupContent = document.createElement('div');
-            popupContent.className = "p-3 min-w-[240px]";
-            popupContent.innerHTML = `
-                <div class="flex items-center gap-2 mb-2 border-b border-gray-100 pb-2">
-                    <span class="text-xl bg-gray-50 rounded-full w-8 h-8 flex items-center justify-center">${data.authorAvatar || '👻'}</span>
-                    <div>
-                        <p class="text-xs font-bold text-gray-800">${data.authorNick || '@Anonimo'}</p>
-                        <p class="text-[9px] uppercase font-bold text-gray-400">${data.category} • ${timeAgo}</p>
+            // HTML del Popup
+            const popupHTML = `
+                <div class="p-3 min-w-[240px]">
+                    <div class="flex items-center gap-2 mb-2 border-b border-gray-100 pb-2">
+                        <span class="text-xl bg-gray-50 rounded-full w-8 h-8 flex items-center justify-center">${data.authorAvatar || '👻'}</span>
+                        <div>
+                            <p class="text-xs font-bold text-gray-800">${data.authorNick || '@Anonimo'}</p>
+                            <p class="text-[9px] uppercase font-bold text-gray-400">${data.category} • ${timeAgo}</p>
+                        </div>
+                    </div>
+                    <p class="text-sm font-medium text-gray-700 leading-snug mb-3 line-clamp-3">"${data.text}"</p>
+                    <div class="flex items-center justify-between gap-2">
+                        <button id="btn-like-${id}" class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition bg-gray-50 hover:bg-pink-50 ${isLiked ? 'text-pink-600' : 'text-gray-500'}">
+                            <i class="${isLiked ? 'fa-solid' : 'fa-regular'} fa-heart ${isLiked ? 'like-anim' : ''}"></i>
+                            <span id="like-count-${id}">${likesCount}</span>
+                        </button>
+                        <button id="btn-open-${id}" class="flex-1 bg-gray-900 text-white text-xs font-bold py-2 rounded-lg hover:bg-black transition flex items-center justify-center gap-2">
+                            <i class="fa-brands fa-whatsapp"></i> Ver / Responder
+                        </button>
                     </div>
                 </div>
-                <p class="text-sm font-medium text-gray-700 leading-snug mb-3 line-clamp-3">"${data.text}"</p>
-                <button id="btn-open-${id}" class="w-full bg-gray-900 text-white text-xs font-bold py-2 rounded-lg hover:bg-black transition flex items-center justify-center gap-2">
-                    <i class="fa-brands fa-whatsapp"></i> Ver / Responder
-                </button>
             `;
             
-            // Event Listener para el botón dentro del popup
-            popupContent.querySelector(`#btn-open-${id}`).onclick = () => window.openThread(id, data);
+            let marker;
+            if (markers[id]) {
+                // Actualizar existente
+                marker = markers[id];
+                // Solo actualizamos el contenido del popup si está abierto para no ser intrusivos, 
+                // o actualizamos el contenido bindeado para la próxima vez.
+                // Leaflet no tiene un método fácil para "actualizar popup abierto", así que
+                // volvemos a bindear. Si está abierto, se refresca.
+                const oldPopup = marker.getPopup();
+                const isOpen = oldPopup && oldPopup.isOpen();
+                
+                // Elemento DOM
+                const popupDiv = document.createElement('div');
+                popupDiv.innerHTML = popupHTML;
+                
+                // Re-bind eventos
+                popupDiv.querySelector(`#btn-open-${id}`).onclick = () => window.openThread(id, data);
+                popupDiv.querySelector(`#btn-like-${id}`).onclick = (e) => {
+                    e.stopPropagation(); // Evitar cerrar popup
+                    window.toggleLike(id, data);
+                };
 
-            marker.bindPopup(popupContent);
+                marker.bindPopup(popupDiv);
+                if (isOpen) marker.openPopup();
+                
+                // Si el chat de este chisme está abierto, actualizar sus likes también
+                if (activeThreadId === id) {
+                    updateThreadHeaderLikes(id, data);
+                }
+
+            } else {
+                // Crear nuevo
+                marker = L.marker([data.lat, data.lng], {icon}).addTo(map);
+                markers[id] = marker; // Guardar referencia
+
+                const popupDiv = document.createElement('div');
+                popupDiv.innerHTML = popupHTML;
+                popupDiv.querySelector(`#btn-open-${id}`).onclick = () => window.openThread(id, data);
+                popupDiv.querySelector(`#btn-like-${id}`).onclick = (e) => { e.stopPropagation(); window.toggleLike(id, data); };
+                
+                marker.bindPopup(popupDiv);
+            }
         }
+
+        // --- LIKES LOGIC ---
+
+        window.toggleLike = async function(id, currentData) {
+            const isLiked = likedChismes.has(id);
+            const val = isLiked ? -1 : 1;
+            
+            // 1. Actualizar estado local (optimista)
+            if (isLiked) likedChismes.delete(id);
+            else likedChismes.add(id);
+            localStorage.setItem('mx_liked_chismes', JSON.stringify([...likedChismes]));
+
+            // 2. Actualizar BD
+            if (appMode === 'local') {
+                const localData = JSON.parse(localStorage.getItem('mx_chismes_data') || '[]');
+                // ID local es "local_INDEX"
+                const index = parseInt(id.split('_')[1]);
+                if (localData[index]) {
+                    localData[index].likes = (localData[index].likes || 0) + val;
+                    if (localData[index].likes < 0) localData[index].likes = 0;
+                    localStorage.setItem('mx_chismes_data', JSON.stringify(localData));
+                    // Refrescar UI manual para local
+                    updateOrRenderMarker(id, localData[index]);
+                }
+            } else {
+                // Firebase
+                const docRef = doc(db, 'chismes', id);
+                try {
+                    await updateDoc(docRef, { likes: increment(val) });
+                    // No necesitamos actualizar UI manual aquí, el onSnapshot lo hará
+                } catch(e) { 
+                    console.error("Error like:", e);
+                    // Revertir si falla
+                    if (isLiked) likedChismes.add(id); else likedChismes.delete(id);
+                    localStorage.setItem('mx_liked_chismes', JSON.stringify([...likedChismes]));
+                }
+            }
+        };
 
         // --- LÓGICA DEL CHAT (HILOS) ---
 
         window.openThread = function(id, data) {
             activeThreadId = id;
             const modal = document.getElementById('thread-modal');
-            const originalContainer = document.getElementById('original-post-container');
             const repliesList = document.getElementById('replies-list');
             
             modal.classList.remove('hidden');
-            map.closePopup(); // Cerrar mapa
+            map.closePopup();
 
-            // 1. Renderizar Post Original
+            // Renderizar Post Original (Header)
+            updateThreadHeaderLikes(id, data);
+
+            // Cargar Respuestas
+            repliesList.innerHTML = '<div class="flex justify-center p-4"><i class="fa-solid fa-spinner fa-spin text-gray-400"></i></div>';
+            
+            if (appMode === 'local') loadLocalReplies(id);
+            else loadFirebaseReplies(id);
+        };
+
+        function updateThreadHeaderLikes(id, data) {
+            const originalContainer = document.getElementById('original-post-container');
+            if (!originalContainer || activeThreadId !== id) return;
+
             const timeFull = dayjs(data.timestamp).format('D MMM h:mm A');
+            const isLiked = likedChismes.has(id);
+            const likesCount = data.likes || 0;
+
             originalContainer.innerHTML = `
                 <div class="bubble-original p-4 relative">
                     <div class="flex justify-between items-start mb-2">
@@ -325,25 +426,22 @@
                             </div>
                         </div>
                     </div>
-                    <p class="text-gray-800 text-base mb-2 leading-relaxed">${data.text}</p>
-                    <p class="text-[10px] text-gray-500 text-right">${timeFull}</p>
+                    <p class="text-gray-800 text-base mb-3 leading-relaxed">${data.text}</p>
+                    <div class="flex items-center justify-between border-t border-gray-200/50 pt-2 mt-2">
+                        <button onclick="window.toggleLike('${id}')" class="flex items-center gap-1.5 text-xs font-bold transition ${isLiked ? 'text-pink-600' : 'text-gray-500'} hover:text-pink-600">
+                             <i class="${isLiked ? 'fa-solid' : 'fa-regular'} fa-heart text-lg ${isLiked ? 'like-anim' : ''}"></i>
+                             <span>${likesCount}</span>
+                        </button>
+                        <p class="text-[10px] text-gray-400">${timeFull}</p>
+                    </div>
                 </div>
             `;
-
-            // 2. Cargar Respuestas
-            repliesList.innerHTML = '<div class="flex justify-center p-4"><i class="fa-solid fa-spinner fa-spin text-gray-400"></i></div>';
-            
-            if (appMode === 'local') {
-                loadLocalReplies(id);
-            } else {
-                loadFirebaseReplies(id);
-            }
-        };
+        }
 
         window.closeThread = function() {
             document.getElementById('thread-modal').classList.add('hidden');
             activeThreadId = null;
-            if (unsubscribeReplies) unsubscribeReplies(); // Dejar de escuchar cambios
+            if (unsubscribeReplies) unsubscribeReplies();
         };
 
         function loadFirebaseReplies(chismeId) {
@@ -353,17 +451,11 @@
             unsubscribeReplies = onSnapshot(q, (snapshot) => {
                 const list = document.getElementById('replies-list');
                 list.innerHTML = '';
-                
                 if (snapshot.empty) {
                     list.innerHTML = '<p class="text-center text-gray-400 text-xs italic mt-8">Sé el primero en responder...</p>';
                     return;
                 }
-
-                snapshot.forEach(doc => {
-                    renderReplyBubble(doc.data());
-                });
-                
-                // Scroll al fondo
+                snapshot.forEach(doc => renderReplyBubble(doc.data()));
                 const container = document.getElementById('chat-container');
                 container.scrollTop = container.scrollHeight;
             });
@@ -373,17 +465,13 @@
             const allReplies = JSON.parse(localStorage.getItem('mx_replies_' + chismeId) || '[]');
             const list = document.getElementById('replies-list');
             list.innerHTML = '';
-            
-            if (allReplies.length === 0) {
-                list.innerHTML = '<p class="text-center text-gray-400 text-xs italic mt-8">Sé el primero en responder...</p>';
-            } else {
-                allReplies.forEach(r => renderReplyBubble(r));
-            }
+            if (allReplies.length === 0) list.innerHTML = '<p class="text-center text-gray-400 text-xs italic mt-8">Sé el primero en responder...</p>';
+            else allReplies.forEach(r => renderReplyBubble(r));
         }
 
         function renderReplyBubble(data) {
             const list = document.getElementById('replies-list');
-            const isMe = data.authorNick === userProfile.nickname; // Simple check visual
+            const isMe = data.authorNick === userProfile.nickname;
             const timeShort = dayjs(data.timestamp).format('h:mm A');
 
             const alignClass = isMe ? 'justify-end pl-8' : 'justify-start pr-8';
@@ -393,14 +481,11 @@
             const html = `
                 <div class="flex ${alignClass} mb-2">
                     <div class="${bubbleClass} p-2 px-3 max-w-full min-w-[120px] relative">
-                        <!-- Header pequeño -->
                         <div class="flex items-center gap-1 mb-1 ${metaClass} opacity-80">
                             <span class="text-xs">${data.authorAvatar}</span>
                             <span class="text-[10px] font-bold text-gray-600 truncate" style="color: ${stringToColor(data.authorNick)}">${data.authorNick}</span>
                         </div>
-                        
                         <p class="text-sm text-gray-800 leading-snug break-words">${data.text}</p>
-                        
                         <div class="text-[9px] text-gray-400 text-right mt-1 flex items-center justify-end gap-1">
                             ${timeShort}
                             ${isMe ? '<i class="fa-solid fa-check-double text-blue-400"></i>' : ''}
@@ -416,8 +501,7 @@
             const text = input.value.trim();
             if (!text || !activeThreadId) return;
 
-            input.value = ''; // Limpiar inmediato
-
+            input.value = '';
             const replyData = {
                 text: text,
                 authorNick: userProfile.nickname,
@@ -430,7 +514,7 @@
                 const existing = JSON.parse(localStorage.getItem(key) || '[]');
                 existing.push(replyData);
                 localStorage.setItem(key, JSON.stringify(existing));
-                loadLocalReplies(activeThreadId); // Recargar manual
+                loadLocalReplies(activeThreadId);
             } else {
                 try {
                     await addDoc(collection(db, 'chismes', activeThreadId, 'respuestas'), replyData);
@@ -440,7 +524,6 @@
                 }
             }
         };
-
 
         // --- PUBLICAR CHISME PRINCIPAL ---
 
@@ -453,7 +536,6 @@
             btn.disabled = true;
             btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
 
-            // Ofuscación
             const offset = 0.003;
             const safeLat = userLat + (Math.random() - 0.5) * offset;
             const safeLng = userLng + (Math.random() - 0.5) * offset;
@@ -473,7 +555,7 @@
                     const localData = JSON.parse(localStorage.getItem('mx_chismes_data') || '[]');
                     localData.push(newChisme);
                     localStorage.setItem('mx_chismes_data', JSON.stringify(localData));
-                    renderMarker('local_' + Date.now(), newChisme);
+                    updateOrRenderMarker('local_' + Date.now(), newChisme);
                 } else {
                     await addDoc(collection(db, 'chismes'), newChisme);
                 }
@@ -492,23 +574,23 @@
         
         function loadLocalChismes() {
             const localData = JSON.parse(localStorage.getItem('mx_chismes_data') || '[]');
-            localData.forEach((d, i) => renderMarker('local_' + i, d));
+            localData.forEach((d, i) => updateOrRenderMarker('local_' + i, d));
         }
 
         function loadFirebaseChismes() {
-            // Ordenar por fecha (más reciente primero) requiere índice, 
-            // pero para evitar errores en modo prueba, cargamos simple y el cliente renderiza
             const q = query(collection(db, 'chismes')); 
             onSnapshot(q, (snap) => {
                 snap.docChanges().forEach(c => {
-                    if (c.type === "added") renderMarker(c.doc.id, c.doc.data());
+                    // Manejamos 'added' y 'modified' para actualizar likes en tiempo real
+                    if (c.type === "added" || c.type === "modified") {
+                        updateOrRenderMarker(c.doc.id, c.doc.data());
+                    }
                 });
             });
         }
 
         // --- UI UTILS ---
 
-        // Generar color consistente para nombres
         function stringToColor(str) {
             let hash = 0;
             for (let i = 0; i < str.length; i++) { hash = str.charCodeAt(i) + ((hash << 5) - hash); }
