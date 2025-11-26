@@ -51,10 +51,20 @@
         @keyframes likeBounce { 0% { transform: scale(1); } 50% { transform: scale(1.3); } 100% { transform: scale(1); } }
 
         /* Z-Index Layers */
+        #side-menu { z-index: 7000; } /* Menú lateral */
         #config-overlay { z-index: 99999; }
         #toast { z-index: 100000; transition: all 0.5s ease; }
         #post-modal, #profile-modal { z-index: 5000; }
         #thread-modal { z-index: 6000; } /* Chat encima de todo */
+
+        /* Scrollbar bonito para la lista */
+        .custom-scroll::-webkit-scrollbar { width: 4px; }
+        .custom-scroll::-webkit-scrollbar-track { background: #f1f1f1; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
+        
+        /* Animación de entrada de lista */
+        .list-item-anim { animation: slideInRight 0.3s ease-out; }
+        @keyframes slideInRight { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
     </style>
 </head>
 <body>
@@ -65,13 +75,21 @@
 
     <!-- Header -->
     <div class="absolute top-4 left-4 right-4 z-[1000] flex justify-between items-start pointer-events-none">
-        <div class="bg-white/95 backdrop-blur shadow-lg rounded-2xl p-3 flex items-center gap-3 pointer-events-auto border border-purple-100 cursor-pointer" onclick="window.openProfileModal()">
-            <button class="w-10 h-10 bg-gradient-to-br from-purple-600 to-pink-500 rounded-full flex items-center justify-center text-white text-lg shadow border-2 border-white">
-                <span id="header-avatar-preview">👻</span>
+        <div class="bg-white/95 backdrop-blur shadow-lg rounded-2xl p-2 pr-4 flex items-center gap-3 pointer-events-auto border border-purple-100">
+            <!-- Botón Menú (Hamburguesa) -->
+            <button onclick="window.toggleSideMenu()" class="w-10 h-10 hover:bg-gray-100 text-purple-600 rounded-full flex items-center justify-center transition active:scale-95">
+                <i class="fa-solid fa-bars text-xl"></i>
             </button>
-            <div>
-                <h1 class="font-bold text-gray-800 leading-none">Chismes MX</h1>
-                <p id="app-mode-indicator" class="text-[10px] text-gray-500 font-medium mt-1">Cargando...</p>
+
+            <!-- Botón Perfil -->
+            <div class="flex items-center gap-2 cursor-pointer" onclick="window.openProfileModal()">
+                <button class="w-10 h-10 bg-gradient-to-br from-purple-600 to-pink-500 rounded-full flex items-center justify-center text-white text-lg shadow border-2 border-white">
+                    <span id="header-avatar-preview">👻</span>
+                </button>
+                <div>
+                    <h1 class="font-bold text-gray-800 leading-none text-sm">Chismes MX</h1>
+                    <p id="app-mode-indicator" class="text-[9px] text-gray-500 font-medium mt-0.5">Cargando...</p>
+                </div>
             </div>
         </div>
         
@@ -89,6 +107,36 @@
             <i class="fa-solid fa-plus text-2xl group-hover:rotate-90 transition-transform duration-300"></i>
         </button>
     </div>
+
+    <!-- ========================================= -->
+    <!--            MENÚ LATERAL (LISTA)           -->
+    <!-- ========================================= -->
+    <div id="side-menu" class="fixed inset-y-0 left-0 w-80 bg-white shadow-2xl transform -translate-x-full transition-transform duration-300 flex flex-col pointer-events-auto">
+        <!-- Header del Menú -->
+        <div class="p-4 bg-gradient-to-r from-purple-600 to-pink-500 text-white flex justify-between items-center shadow-md z-10">
+            <h2 class="font-bold text-lg flex items-center gap-2">
+                <i class="fa-solid fa-list-ul"></i> Recientes
+            </h2>
+            <button onclick="window.toggleSideMenu()" class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/20 transition">
+                <i class="fa-solid fa-chevron-left"></i>
+            </button>
+        </div>
+        
+        <!-- Lista Scrollable -->
+        <div id="chismes-list-container" class="flex-1 overflow-y-auto custom-scroll bg-gray-50 p-2 space-y-2">
+            <!-- Los items se inyectan aquí con JS -->
+            <div class="text-center text-gray-400 mt-10 text-sm italic">
+                Cargando chismes...
+            </div>
+        </div>
+        
+        <!-- Footer del Menú -->
+        <div class="p-3 bg-white border-t border-gray-100 text-center">
+            <p class="text-[10px] text-gray-400">Toca un chisme para ir a su ubicación</p>
+        </div>
+    </div>
+    <!-- Overlay para cerrar menú al tocar fuera -->
+    <div id="menu-overlay" onclick="window.toggleSideMenu()" class="fixed inset-0 bg-black/30 z-[6000] hidden transition-opacity opacity-0"></div>
 
     <!-- ========================================= -->
     <!--            MODAL DE HILO (CHAT)           -->
@@ -222,7 +270,7 @@
         
         // Estado de Likes y Marcadores
         let likedChismes = new Set(JSON.parse(localStorage.getItem('mx_liked_chismes') || '[]'));
-        let markers = {}; // Almacenar referencias a los marcadores
+        let markers = {}; 
 
         // Inicializar
         async function initApp() {
@@ -264,10 +312,90 @@
                 : '<i class="fa-solid fa-cloud text-green-500"></i> En Línea';
         }
 
+        // --- MENÚ LATERAL ---
+
+        window.toggleSideMenu = function() {
+            const menu = document.getElementById('side-menu');
+            const overlay = document.getElementById('menu-overlay');
+            const isOpen = !menu.classList.contains('-translate-x-full');
+            
+            if (isOpen) {
+                menu.classList.add('-translate-x-full');
+                overlay.classList.add('hidden');
+                setTimeout(() => overlay.classList.remove('opacity-100'), 0);
+            } else {
+                menu.classList.remove('-translate-x-full');
+                overlay.classList.remove('hidden');
+                setTimeout(() => overlay.classList.add('opacity-100'), 10);
+                
+                // Limpiar mensaje de carga si ya hay items
+                const list = document.getElementById('chismes-list-container');
+                if (list.children.length > 1) {
+                    const loadingMsg = list.querySelector('.text-center.text-gray-400');
+                    if (loadingMsg) loadingMsg.style.display = 'none';
+                }
+            }
+        };
+
+        window.flyToChisme = function(id, lat, lng) {
+            window.toggleSideMenu(); // Cerrar menú
+            
+            // Zoom al marcador
+            map.flyTo([lat, lng], 17, { duration: 1.5 });
+            
+            // Abrir popup tras el vuelo
+            setTimeout(() => {
+                if (markers[id]) markers[id].openPopup();
+            }, 1600);
+        };
+
+        function addChismeToList(id, data) {
+            // Verificar si ya existe en la lista para no duplicar
+            if (document.getElementById(`list-item-${id}`)) return;
+
+            const list = document.getElementById('chismes-list-container');
+            const loadingMsg = list.querySelector('.text-center.text-gray-400');
+            if(loadingMsg) loadingMsg.style.display = 'none';
+
+            const timeAgo = dayjs(data.timestamp).fromNow();
+            
+            // Colores por categoría para el borde
+            const borderColors = { 'picante': 'border-red-500', 'amor': 'border-pink-500', 'barrio': 'border-blue-500' };
+            const borderColor = borderColors[data.category] || 'border-gray-500';
+
+            const itemHTML = `
+                <div id="list-item-${id}" onclick="window.flyToChisme('${id}', ${data.lat}, ${data.lng})" 
+                     class="bg-white p-3 rounded-xl shadow-sm border-l-4 ${borderColor} cursor-pointer hover:bg-gray-50 transition active:scale-95 list-item-anim relative overflow-hidden">
+                    
+                    <div class="flex items-center gap-3">
+                        <span class="text-2xl">${data.authorAvatar || '👻'}</span>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex justify-between items-center">
+                                <h4 class="font-bold text-xs text-gray-700 truncate">${data.authorNick || '@Anonimo'}</h4>
+                                <span class="text-[9px] bg-gray-100 px-1.5 rounded text-gray-500">${data.category}</span>
+                            </div>
+                            <p class="text-xs text-gray-600 truncate leading-relaxed mt-0.5 font-medium">"${data.text}"</p>
+                            <div class="flex justify-between items-center mt-1">
+                                <span class="text-[10px] text-gray-400">${timeAgo}</span>
+                                <div class="flex items-center gap-1 text-[10px] text-pink-500 font-bold">
+                                    <i class="fa-solid fa-heart"></i> ${data.likes || 0}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Insertar al PRINCIPIO (prepend) para que los nuevos salgan arriba
+            list.insertAdjacentHTML('afterbegin', itemHTML);
+        }
+
         // --- MAPA & MARCADORES ---
         
-        // Función unificada para crear o actualizar marcadores
         function updateOrRenderMarker(id, data) {
+            // También agregar a la lista lateral
+            addChismeToList(id, data);
+
             const colors = { 'picante': '#ef4444', 'amor': '#ec4899', 'barrio': '#3b82f6' };
             const c = colors[data.category] || colors.picante;
             const timeAgo = dayjs(data.timestamp).fromNow();
@@ -307,38 +435,33 @@
             
             let marker;
             if (markers[id]) {
-                // Actualizar existente
                 marker = markers[id];
-                // Solo actualizamos el contenido del popup si está abierto para no ser intrusivos, 
-                // o actualizamos el contenido bindeado para la próxima vez.
-                // Leaflet no tiene un método fácil para "actualizar popup abierto", así que
-                // volvemos a bindear. Si está abierto, se refresca.
                 const oldPopup = marker.getPopup();
                 const isOpen = oldPopup && oldPopup.isOpen();
                 
-                // Elemento DOM
                 const popupDiv = document.createElement('div');
                 popupDiv.innerHTML = popupHTML;
                 
-                // Re-bind eventos
                 popupDiv.querySelector(`#btn-open-${id}`).onclick = () => window.openThread(id, data);
                 popupDiv.querySelector(`#btn-like-${id}`).onclick = (e) => {
-                    e.stopPropagation(); // Evitar cerrar popup
+                    e.stopPropagation();
                     window.toggleLike(id, data);
                 };
 
                 marker.bindPopup(popupDiv);
                 if (isOpen) marker.openPopup();
                 
-                // Si el chat de este chisme está abierto, actualizar sus likes también
-                if (activeThreadId === id) {
-                    updateThreadHeaderLikes(id, data);
+                // Actualizar contador en lista si existe
+                const listItemLike = document.querySelector(`#list-item-${id} .fa-heart`);
+                if(listItemLike && listItemLike.nextSibling) {
+                    listItemLike.nextSibling.textContent = " " + likesCount;
                 }
+                
+                if (activeThreadId === id) updateThreadHeaderLikes(id, data);
 
             } else {
-                // Crear nuevo
                 marker = L.marker([data.lat, data.lng], {icon}).addTo(map);
-                markers[id] = marker; // Guardar referencia
+                markers[id] = marker;
 
                 const popupDiv = document.createElement('div');
                 popupDiv.innerHTML = popupHTML;
@@ -355,32 +478,25 @@
             const isLiked = likedChismes.has(id);
             const val = isLiked ? -1 : 1;
             
-            // 1. Actualizar estado local (optimista)
             if (isLiked) likedChismes.delete(id);
             else likedChismes.add(id);
             localStorage.setItem('mx_liked_chismes', JSON.stringify([...likedChismes]));
 
-            // 2. Actualizar BD
             if (appMode === 'local') {
                 const localData = JSON.parse(localStorage.getItem('mx_chismes_data') || '[]');
-                // ID local es "local_INDEX"
                 const index = parseInt(id.split('_')[1]);
                 if (localData[index]) {
                     localData[index].likes = (localData[index].likes || 0) + val;
                     if (localData[index].likes < 0) localData[index].likes = 0;
                     localStorage.setItem('mx_chismes_data', JSON.stringify(localData));
-                    // Refrescar UI manual para local
                     updateOrRenderMarker(id, localData[index]);
                 }
             } else {
-                // Firebase
                 const docRef = doc(db, 'chismes', id);
                 try {
                     await updateDoc(docRef, { likes: increment(val) });
-                    // No necesitamos actualizar UI manual aquí, el onSnapshot lo hará
                 } catch(e) { 
                     console.error("Error like:", e);
-                    // Revertir si falla
                     if (isLiked) likedChismes.add(id); else likedChismes.delete(id);
                     localStorage.setItem('mx_liked_chismes', JSON.stringify([...likedChismes]));
                 }
@@ -397,10 +513,8 @@
             modal.classList.remove('hidden');
             map.closePopup();
 
-            // Renderizar Post Original (Header)
             updateThreadHeaderLikes(id, data);
 
-            // Cargar Respuestas
             repliesList.innerHTML = '<div class="flex justify-center p-4"><i class="fa-solid fa-spinner fa-spin text-gray-400"></i></div>';
             
             if (appMode === 'local') loadLocalReplies(id);
@@ -581,7 +695,6 @@
             const q = query(collection(db, 'chismes')); 
             onSnapshot(q, (snap) => {
                 snap.docChanges().forEach(c => {
-                    // Manejamos 'added' y 'modified' para actualizar likes en tiempo real
                     if (c.type === "added" || c.type === "modified") {
                         updateOrRenderMarker(c.doc.id, c.doc.data());
                     }
