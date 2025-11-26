@@ -165,17 +165,17 @@
         import { getFirestore, collection, addDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // -------------------------------------------------------------
-        // 👇 CONFIGURACIÓN (Si está vacía, funciona en MODO LOCAL)
+        // 👇 CONFIGURACIÓN FIREBASE
         // -------------------------------------------------------------
         const firebaseConfig = {
-  apiKey: "AIzaSyBOEBlrI2pw0K3PA0k-ofE7xKDrl39Znyc",
-  authDomain: "chismemx-5bb88.firebaseapp.com",
-  projectId: "chismemx-5bb88",
-  storageBucket: "chismemx-5bb88.firebasestorage.app",
-  messagingSenderId: "790491958008",
-  appId: "1:790491958008:web:1a5e84de877053bb36490d",
-  measurementId: "G-QP2TXX6EGK"
-};
+            apiKey: "AIzaSyBOEBlrI2pw0K3PA0k-ofE7xKDrl39Znyc",
+            authDomain: "chismemx-5bb88.firebaseapp.com",
+            projectId: "chismemx-5bb88",
+            storageBucket: "chismemx-5bb88.firebasestorage.app",
+            messagingSenderId: "790491958008",
+            appId: "1:790491958008:web:1a5e84de877053bb36490d",
+            measurementId: "G-QP2TXX6EGK"
+        };
         // -------------------------------------------------------------
 
         // Variables Globales
@@ -279,6 +279,12 @@
                     window.showToast("¡Guardado en tu dispositivo!", "success");
                 } else {
                     // GUARDAR EN FIREBASE
+                    
+                    // Verificación de Autenticación
+                    if (!auth.currentUser) {
+                        throw new Error("No autenticado. Revisa que 'Anónimo' esté habilitado en Firebase Console -> Authentication.");
+                    }
+
                     await addDoc(collection(db, 'chismes'), newChisme);
                     window.showToast("¡Publicado en la nube!", "success");
                 }
@@ -287,8 +293,17 @@
                 window.closePostModal();
 
             } catch (e) {
-                console.error(e);
-                window.showToast("Error al guardar.", "error");
+                console.error("Error al publicar:", e);
+                // Mensajes de error más claros
+                if (e.code === 'permission-denied') {
+                    window.showToast("Error: Revisa las Reglas de Firestore en la consola.", "error");
+                } else if (e.code === 'unavailable') {
+                     window.showToast("Error: Sin conexión a internet.", "error");
+                } else if (e.message.includes("No autenticado")) {
+                     window.showToast(e.message, "error");
+                } else {
+                    window.showToast("Error: Revisa que creaste la Base de Datos en Firestore.", "error");
+                }
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = textoOriginal;
