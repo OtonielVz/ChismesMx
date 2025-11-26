@@ -50,6 +50,9 @@
 
         /* Modal Términos (Z-Index muy alto) */
         #terms-modal { z-index: 99999; }
+        
+        /* Modal Diagnóstico */
+        #diag-modal { z-index: 100000; }
     </style>
 </head>
 <body>
@@ -78,6 +81,45 @@
             <button onclick="window.acceptTerms()" class="w-full bg-gray-900 hover:bg-black text-white font-bold py-4 rounded-xl shadow-lg transition transform active:scale-95">
                 He leído y Acepto los Términos
             </button>
+        </div>
+    </div>
+
+    <!-- ========================================= -->
+    <!--      MODAL DIAGNÓSTICO DE ERROR           -->
+    <!-- ========================================= -->
+    <div id="diag-modal" class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 hidden">
+        <div class="bg-white w-full max-w-lg rounded-3xl shadow-2xl p-6 relative">
+            <button onclick="document.getElementById('diag-modal').classList.add('hidden')" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><i class="fa-solid fa-times text-xl"></i></button>
+            
+            <div class="text-center mb-6">
+                <div class="bg-red-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
+                    <i class="fa-solid fa-triangle-exclamation text-4xl text-red-500"></i>
+                </div>
+                <h2 class="text-2xl font-bold text-gray-900">Problema de Conexión</h2>
+                <p class="text-sm text-gray-500 mt-2">No pudimos guardar el chisme en la nube.</p>
+            </div>
+
+            <div class="bg-gray-100 rounded-xl p-4 text-left text-sm font-mono text-gray-700 overflow-x-auto mb-6 border-l-4 border-red-500">
+                <p id="diag-error-msg">Analizando...</p>
+            </div>
+
+            <div class="space-y-3">
+                <h3 class="font-bold text-gray-800 text-sm">Posibles Soluciones:</h3>
+                <ul class="text-sm text-gray-600 space-y-2 list-disc pl-5">
+                    <li>Ve a <strong>Firebase Console > Firestore Database > Reglas</strong>.</li>
+                    <li>Asegúrate de que digan <code>allow read, write: if true;</code> (solo para pruebas) o <code>if request.auth != null;</code>.</li>
+                    <li>Verifica que la base de datos esté creada en modo <strong>Producción</strong> o <strong>Prueba</strong> y no esté vacía/desactivada.</li>
+                </ul>
+            </div>
+            
+            <div class="mt-6 flex gap-3">
+                <button onclick="window.retryConnection()" class="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-xl transition">
+                    Reintentar Conexión
+                </button>
+                <button onclick="document.getElementById('diag-modal').classList.add('hidden')" class="px-4 py-3 text-gray-500 font-bold hover:bg-gray-100 rounded-xl transition">
+                    Cerrar
+                </button>
+            </div>
         </div>
     </div>
 
@@ -199,10 +241,10 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, onSnapshot, setDoc, doc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // -------------------------------------------------------------
-        // 👇 CONFIGURACIÓN FIREBASE
+        // 👇 CONFIGURACIÓN FIREBASE (TUS LLAVES)
         // -------------------------------------------------------------
         const firebaseConfig = {
             apiKey: "AIzaSyBOEBlrI2pw0K3PA0k-ofE7xKDrl39Znyc",
@@ -224,50 +266,71 @@
 
         // 1. INICIALIZACIÓN INTELIGENTE
         async function initApp() {
-            // Verificar Términos
             checkTerms();
-
             initMap();
             loadProfileFromStorage();
             
-            // Listener para contador de caracteres
+            // UI Helpers
             document.getElementById('chisme-content').addEventListener('input', function() {
                 const count = this.value.length;
-                const counterEl = document.getElementById('char-counter');
-                counterEl.innerText = `${count} / 500`;
-                if(count >= 450) counterEl.classList.replace('text-gray-400', 'text-red-500');
-                else counterEl.classList.replace('text-red-500', 'text-gray-400');
+                document.getElementById('char-counter').innerText = `${count} / 500`;
             });
 
             if (!firebaseConfig.apiKey) {
-                // MODO LOCAL (Fallback)
                 appMode = 'local';
                 updateModeUI();
-                loadLocalChismes(); // Carga desde LocalStorage
+                loadLocalChismes();
                 window.requestLocation(true);
             } else {
-                // MODO FIREBASE (Online)
                 appMode = 'firebase';
                 updateModeUI();
                 try {
                     app = initializeApp(firebaseConfig);
                     auth = getAuth(app);
                     db = getFirestore(app);
+                    
+                    // Intentamos login
                     await signInAnonymously(auth);
                     
                     onAuthStateChanged(auth, (user) => {
                         if (user) {
                             loadFirebaseChismes();
                             window.requestLocation(true);
+                            // Correr diagnóstico silencioso
+                            runSilentDiagnostic(); 
                         }
                     });
                 } catch (error) {
-                    console.error("Error Firebase:", error);
-                    window.showToast("Error conectando a la nube. Usando modo local.", "error");
-                    appMode = 'local'; // Fallback por error
+                    console.error("Error Inicial:", error);
+                    window.showErrorModal("Error de Inicialización", error.message);
+                    appMode = 'local';
                     loadLocalChismes();
                 }
             }
+        }
+
+        // --- DIAGNÓSTICO ---
+        async function runSilentDiagnostic() {
+            try {
+                // Intento escribir un documento de prueba en una colección temporal
+                const diagRef = doc(db, '_diagnostics', 'test_connection_' + Date.now());
+                await setDoc(diagRef, { status: 'ok', timestamp: new Date().toISOString() });
+                console.log("Diagnóstico OK: Escritura permitida.");
+            } catch (e) {
+                console.error("Diagnóstico FALLÓ:", e);
+                window.showErrorModal("Error de Permisos (Base de Datos)", e.code + ": " + e.message);
+            }
+        }
+
+        window.retryConnection = function() {
+            location.reload();
+        }
+
+        window.showErrorModal = function(title, details) {
+            const m = document.getElementById('diag-modal');
+            m.querySelector('h2').innerText = title;
+            document.getElementById('diag-error-msg').innerText = details;
+            m.classList.remove('hidden');
         }
 
         // --- LÓGICA DE TÉRMINOS ---
@@ -301,8 +364,7 @@
             const txt = document.getElementById('chisme-content').value.trim();
             
             if (!txt) return window.showToast("¡Escribe algo primero!", "error");
-            if (txt.length > 500) return window.showToast("El chisme es muy largo (Máx 500)", "error");
-
+            
             // UI Loading
             const textoOriginal = btn.innerHTML;
             btn.disabled = true;
@@ -315,63 +377,41 @@
                 return window.showToast("Necesitamos tu ubicación", "error");
             }
 
-            // --- PROTECCIÓN DE UBICACIÓN (Pública) ---
-            const offset = 0.003; // ~300m
+            const offset = 0.003; 
             const safeLat = userLat + (Math.random() - 0.5) * offset;
             const safeLng = userLng + (Math.random() - 0.5) * offset;
 
             const newChisme = {
                 text: txt, 
                 category: currentCategory,
-                lat: safeLat, // Ubicación Falsa/Ofuscada
-                lng: safeLng, // Ubicación Falsa/Ofuscada
+                lat: safeLat, lng: safeLng,
                 timestamp: new Date().toISOString(), 
                 likes: 0,
                 authorNick: userProfile.nickname,
                 authorAvatar: userProfile.avatar
             };
 
-            try {
-                // --- LOGS DE SEGURIDAD (Privados/Legales) ---
-                // Obtenemos IP para registro legal (sin bloquear si falla)
-                let userIp = 'unknown';
-                try {
-                    const ipRes = await fetch('https://api.ipify.org?format=json');
-                    const ipData = await ipRes.json();
-                    userIp = ipData.ip;
-                } catch(e) { console.warn("No se pudo obtener IP para log"); }
+            // TIMEOUT DE SEGURIDAD (5 segundos)
+            const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error("timeout")), 5000)
+            );
 
+            try {
                 if (appMode === 'local') {
-                    // MODO LOCAL
                     const localData = JSON.parse(localStorage.getItem('mx_chismes_data') || '[]');
                     localData.push(newChisme);
                     localStorage.setItem('mx_chismes_data', JSON.stringify(localData));
                     renderMarker('local_' + Date.now(), newChisme);
                     window.showToast("¡Guardado en tu dispositivo!", "success");
                 } else {
-                    // MODO FIREBASE
-                    if (!auth.currentUser) throw new Error("No autenticado.");
+                    if (!auth.currentUser) throw new Error("No autenticado (Auth User is null).");
 
-                    // 1. Guardar Chisme Público (Ofuscado)
-                    const docRef = await addDoc(collection(db, 'chismes'), newChisme);
-
-                    // 2. Guardar LOG PRIVADO (Ubicación Real + IP)
-                    // Esto se guarda en una colección separada para admins/temas legales
-                    try {
-                        await addDoc(collection(db, 'admin_logs'), {
-                            publicId: docRef.id,
-                            contentSnippet: txt.substring(0, 50),
-                            exactLat: userLat, // REAL
-                            exactLng: userLng, // REAL
-                            ip: userIp,        // REAL
-                            timestamp: new Date().toISOString(),
-                            deviceInfo: navigator.userAgent
-                        });
-                        console.log("Log de seguridad registrado.");
-                    } catch(logErr) {
-                        console.error("Error guardando log:", logErr);
-                    }
-
+                    // Carrera entre Guardar y Timeout
+                    await Promise.race([
+                        addDoc(collection(db, 'chismes'), newChisme),
+                        timeoutPromise
+                    ]);
+                    
                     window.showToast("¡Publicado en la nube!", "success");
                 }
                 
@@ -381,7 +421,14 @@
 
             } catch (e) {
                 console.error("Error al publicar:", e);
-                window.showToast("Error al publicar. Revisa tu conexión.", "error");
+                
+                if (e.message === 'timeout') {
+                    window.showErrorModal("Tiempo de espera agotado", "La base de datos no responde. Probablemente no has creado la base de datos o las reglas bloquean la escritura.");
+                } else if (e.code === 'permission-denied') {
+                    window.showErrorModal("Permiso Denegado", "Reglas de Firestore insuficientes. Configura 'allow read, write: if true;' para pruebas.");
+                } else {
+                    window.showToast("Error: " + e.message, "error");
+                }
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = textoOriginal;
@@ -389,12 +436,9 @@
         };
 
         // --- CARGAR DATOS ---
-        
         function loadLocalChismes() {
             const localData = JSON.parse(localStorage.getItem('mx_chismes_data') || '[]');
-            localData.forEach((data, index) => {
-                renderMarker('local_' + index, data);
-            });
+            localData.forEach((data, index) => renderMarker('local_' + index, data));
         }
 
         function loadFirebaseChismes() {
@@ -406,28 +450,21 @@
         }
 
         // 3. UI & HELPERS
-
         function renderMarker(id, data) {
             if (processedDocs.has(id)) return;
             processedDocs.add(id);
             
             const colors = { 'picante': '#ef4444', 'amor': '#ec4899', 'barrio': '#3b82f6' };
-            const i = 'fa-comment'; // Default icon fallback
             const c = colors[data.category] || colors.picante;
-
-            const sticker = data.authorAvatar || `<i class="fa-solid ${i} text-white"></i>`;
             const nick = data.authorNick || "@Anonimo";
 
-            // Icono en el mapa
             const iconContent = data.authorAvatar 
                 ? `<span style="transform: rotate(45deg); font-size: 20px;">${data.authorAvatar}</span>` 
                 : `<i class="fa-solid fa-comment text-white" style="transform: rotate(45deg);"></i>`;
 
             const icon = L.divIcon({
                 className: 'custom-div-icon',
-                html: `<div class="marker-pin" style="background-color:${c}">
-                        ${iconContent}
-                       </div>`,
+                html: `<div class="marker-pin" style="background-color:${c}">${iconContent}</div>`,
                 iconSize: [36, 36], iconAnchor: [18, 36]
             });
 
@@ -474,10 +511,8 @@
             const nickInput = document.getElementById('nickname-input').value.trim();
             const finalNick = nickInput ? '@' + nickInput : '@AnonimoMX';
             const finalAvatar = window.tempAvatar || userProfile.avatar;
-
             userProfile = { nickname: finalNick, avatar: finalAvatar };
             localStorage.setItem('chismes_profile', JSON.stringify(userProfile));
-            
             updateHeaderUI();
             document.getElementById('profile-modal').classList.add('hidden');
             window.showToast("¡Identidad actualizada!", "success");
