@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Chismes MX - Local</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Leaflet CSS (Mapas) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    
+    <!-- Font Awesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;800&display=swap" rel="stylesheet">
+
+    <!-- Leaflet Script -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <style>
+        body { font-family: 'Poppins', sans-serif; background-color: #f8fafc; height: 100vh; overflow: hidden; }
+        #map { height: 100%; width: 100%; z-index: 1; }
+        
+        /* Pines */
+        .marker-pin {
+            width: 36px; height: 36px; border-radius: 50% 50% 50% 0;
+            position: absolute; transform: rotate(-45deg);
+            left: 50%; top: 50%; margin: -20px 0 0 -20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.4);
+            display: flex; align-items: center; justify-content: center;
+            border: 2px solid white;
+        }
+        .marker-pin i { transform: rotate(45deg); color: white; font-size: 16px; }
+
+        /* Animaciones */
+        .fade-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Categorías */
+        .category-btn.active { ring-width: 2px; ring-offset-width: 2px; transform: scale(1.05); }
+        
+        /* Avatars */
+        .avatar-option { transition: all 0.2s; cursor: pointer; border: 2px solid transparent; }
+        .avatar-option:hover { transform: scale(1.1); }
+        .avatar-option.selected { border-color: #9333ea; background-color: #f3e8ff; transform: scale(1.1); }
+
+        /* Configuración */
+        #config-overlay { z-index: 9999; }
+
+        /* Toast */
+        #toast { z-index: 10000; transition: all 0.5s ease; }
+    </style>
+</head>
+<body>
+
+    <!-- ========================================= -->
+    <!--      PANTALLA DE CONFIGURACIÓN            -->
+    <!-- ========================================= -->
+    <div id="config-overlay" class="fixed inset-0 bg-gray-900 text-white flex items-center justify-center p-8 hidden">
+        <div class="max-w-2xl text-center space-y-6">
+            <i class="fa-solid fa-code text-6xl text-purple-500 mb-4"></i>
+            <h1 class="text-3xl font-bold">Configuración Requerida</h1>
+            <p class="text-gray-300">Pega tus llaves de Firebase en el código para continuar.</p>
+            <div class="bg-gray-800 p-4 rounded text-left font-mono text-xs overflow-auto border border-gray-700">
+                <p class="text-green-400">// Busca la línea ~200 y pega tu config:</p>
+                const firebaseConfig = { ... };
+            </div>
+            <button onclick="location.reload()" class="bg-purple-600 px-6 py-2 rounded-full font-bold">Ya lo hice, Recargar</button>
+        </div>
+    </div>
+
+    <!-- ========================================= -->
+    <!--            INTERFAZ PRINCIPAL             -->
+    <!-- ========================================= -->
+
+    <!-- Header -->
+    <div class="absolute top-4 left-4 right-4 z-[1000] flex justify-between items-start pointer-events-none">
+        <div class="bg-white/95 backdrop-blur shadow-lg rounded-2xl p-3 flex items-center gap-3 pointer-events-auto border border-purple-100">
+            <!-- Botón Perfil (Nuevo) -->
+            <button onclick="window.openProfileModal()" class="w-10 h-10 bg-gradient-to-br from-purple-600 to-pink-500 rounded-full flex items-center justify-center text-white text-lg shadow hover:scale-105 transition active:scale-95 border-2 border-white">
+                <span id="header-avatar-preview">👻</span>
+            </button>
+            <div>
+                <h1 class="font-bold text-gray-800 leading-none">Chismes MX</h1>
+                <p id="header-nick-preview" class="text-[10px] text-gray-500 font-medium mt-1">@Anonimo</p>
+            </div>
+        </div>
+        
+        <!-- Botón GPS -->
+        <button onclick="window.requestLocation()" class="pointer-events-auto bg-white hover:bg-gray-50 text-gray-700 shadow-lg rounded-full w-12 h-12 flex items-center justify-center transition active:scale-95 border border-gray-200">
+            <i class="fa-solid fa-location-crosshairs text-xl text-blue-500"></i>
+        </button>
+    </div>
+
+    <!-- Mapa -->
+    <div id="map"></div>
+
+    <!-- Botón Flotante Publicar -->
+    <div class="absolute bottom-8 right-6 z-[1000]">
+        <button onclick="window.openPostModal()" class="group bg-gray-900 hover:bg-black text-white w-16 h-16 rounded-full shadow-2xl flex items-center justify-center transition-all transform hover:scale-105 active:scale-90 border-4 border-white/20">
+            <i class="fa-solid fa-plus text-2xl group-hover:rotate-90 transition-transform duration-300"></i>
+        </button>
+    </div>
+
+    <!-- Modal: Publicar Chisme -->
+    <div id="post-modal" class="fixed inset-0 z-[2000] hidden flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div class="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden fade-in relative">
+            <div class="bg-gradient-to-r from-purple-600 to-pink-500 p-6 text-white flex justify-between items-center">
+                <h2 class="font-bold text-xl">Nuevo Chisme</h2>
+                <button onclick="window.closePostModal()" class="bg-white/20 hover:bg-white/30 rounded-full w-8 h-8 flex items-center justify-center transition"><i class="fa-solid fa-times"></i></button>
+            </div>
+            <div class="p-6">
+                <label class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 block">Elige el tono</label>
+                <div class="flex gap-2 overflow-x-auto pb-2 mb-4 scrollbar-hide">
+                    <button onclick="window.selectCategory('picante', this)" class="category-btn active bg-red-50 border border-red-200 text-red-600 px-4 py-2 rounded-xl text-sm font-bold flex-shrink-0 transition ring-red-400">🔥 Picante</button>
+                    <button onclick="window.selectCategory('amor', this)" class="category-btn bg-pink-50 border border-pink-200 text-pink-600 px-4 py-2 rounded-xl text-sm font-bold flex-shrink-0 transition ring-pink-400">💘 Amor</button>
+                    <button onclick="window.selectCategory('barrio', this)" class="category-btn bg-blue-50 border border-blue-200 text-blue-600 px-4 py-2 rounded-xl text-sm font-bold flex-shrink-0 transition ring-blue-400">🏘️ Barrio</button>
+                </div>
+                
+                <textarea id="chisme-content" rows="4" class="w-full bg-gray-50 border border-gray-200 rounded-xl p-4 text-gray-700 resize-none text-sm focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="Cuenta el chisme aquí..."></textarea>
+                
+                <div class="mt-2 flex items-center gap-2 text-xs text-gray-500 justify-end">
+                    <span>Publicando como:</span>
+                    <strong class="text-purple-600" id="posting-as-preview">@Anonimo</strong>
+                </div>
+
+                <button onclick="window.submitChisme()" id="btn-submit" class="w-full mt-4 bg-gray-900 text-white font-bold py-3.5 rounded-xl shadow-lg flex justify-center items-center gap-2 hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition">
+                    <i class="fa-solid fa-paper-plane"></i> <span>Publicar</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Configurar Perfil (Identidad) -->
+    <div id="profile-modal" class="fixed inset-0 z-[2000] hidden flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div class="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden fade-in relative">
+            <div class="bg-gray-900 p-6 text-white flex justify-between items-center">
+                <h2 class="font-bold text-xl">Tu Identidad Secreta</h2>
+                <button onclick="window.closeProfileModal()" class="bg-white/20 hover:bg-white/30 rounded-full w-8 h-8 flex items-center justify-center transition"><i class="fa-solid fa-times"></i></button>
+            </div>
+            <div class="p-6">
+                <!-- Avatar Grid -->
+                <label class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 block">Elige tu Sticker</label>
+                <div class="grid grid-cols-4 gap-3 mb-6">
+                    <!-- Se generan dinámicamente o estáticos -->
+                    <div onclick="window.selectAvatar('👻', this)" class="avatar-option rounded-xl bg-gray-50 h-14 flex items-center justify-center text-2xl">👻</div>
+                    <div onclick="window.selectAvatar('👽', this)" class="avatar-option rounded-xl bg-gray-50 h-14 flex items-center justify-center text-2xl">👽</div>
+                    <div onclick="window.selectAvatar('🦊', this)" class="avatar-option rounded-xl bg-gray-50 h-14 flex items-center justify-center text-2xl">🦊</div>
+                    <div onclick="window.selectAvatar('🤡', this)" class="avatar-option rounded-xl bg-gray-50 h-14 flex items-center justify-center text-2xl">🤡</div>
+                    <div onclick="window.selectAvatar('🤖', this)" class="avatar-option rounded-xl bg-gray-50 h-14 flex items-center justify-center text-2xl">🤖</div>
+                    <div onclick="window.selectAvatar('💀', this)" class="avatar-option rounded-xl bg-gray-50 h-14 flex items-center justify-center text-2xl">💀</div>
+                    <div onclick="window.selectAvatar('🦉', this)" class="avatar-option rounded-xl bg-gray-50 h-14 flex items-center justify-center text-2xl">🦉</div>
+                    <div onclick="window.selectAvatar('🦄', this)" class="avatar-option rounded-xl bg-gray-50 h-14 flex items-center justify-center text-2xl">🦄</div>
+                </div>
+
+                <!-- Nickname Input -->
+                <label class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 block">Tu Apodo Anónimo</label>
+                <div class="relative">
+                    <span class="absolute left-4 top-3.5 text-gray-400 font-bold">@</span>
+                    <input type="text" id="nickname-input" class="w-full bg-gray-50 border border-gray-200 rounded-xl py-3 pl-8 pr-4 text-gray-700 font-bold focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="anonimoMX" maxlength="15">
+                </div>
+
+                <button onclick="window.saveProfile()" class="w-full mt-6 bg-purple-600 text-white font-bold py-3.5 rounded-xl shadow-lg hover:bg-purple-700 transition">
+                    Guardar Identidad
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="fixed top-24 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-6 py-4 rounded-full shadow-2xl flex items-center gap-3 text-sm font-medium opacity-0 pointer-events-none transform -translate-y-4">
+        <i id="toast-icon" class="fa-solid fa-info-circle text-blue-400 text-lg"></i> 
+        <span id="toast-msg">Mensaje</span>
+    </div>
+
+    <!-- ========================================= -->
+    <!--            LÓGICA JAVASCRIPT              -->
+    <!-- ========================================= -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // -------------------------------------------------------------
+        // 👇👇👇 ZONA DE EDICIÓN: PEGA AQUÍ TUS CREDENCIALES 👇👇👇
+        // -------------------------------------------------------------
+     const firebaseConfig = {
+  apiKey: "AIzaSyBOEBlrI2pw0K3PA0k-ofE7xKDrl39Znyc",
+  authDomain: "chismemx-5bb88.firebaseapp.com",
+  projectId: "chismemx-5bb88",
+  storageBucket: "chismemx-5bb88.firebasestorage.app",
+  messagingSenderId: "790491958008",
+  appId: "1:790491958008:web:1a5e84de877053bb36490d",
+  measurementId: "G-QP2TXX6EGK"
+};
+        // -------------------------------------------------------------
+
+        // Variables Globales
+        let app, auth, db, map, userLat, userLng, currentUser;
+        let currentCategory = 'picante';
+        const processedDocs = new Set();
+        
+        // Estado del Perfil
+        let userProfile = {
+            avatar: '👻',
+            nickname: '@AnonimoMX'
+        };
+
+        // 1. Inicialización
+        if (!firebaseConfig.apiKey) {
+            document.getElementById('config-overlay').classList.remove('hidden');
+        } else {
+            app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+            
+            // Cargar perfil del localStorage antes de iniciar
+            loadProfileFromStorage();
+            initApp();
+        }
+
+        async function initApp() {
+            initMap();
+            try {
+                await signInAnonymously(auth);
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        currentUser = user;
+                        loadChismes();
+                        window.requestLocation(true);
+                    }
+                });
+            } catch (error) {
+                console.error("Auth Error:", error);
+                window.showToast("Error Auth: Activa 'Anónimo' en Firebase Console", "error");
+            }
+        }
+
+        // 2. Funciones de Perfil
+        function loadProfileFromStorage() {
+            const stored = localStorage.getItem('chismes_profile');
+            if (stored) {
+                userProfile = JSON.parse(stored);
+            }
+            updateHeaderUI();
+        }
+
+        function updateHeaderUI() {
+            document.getElementById('header-avatar-preview').innerText = userProfile.avatar;
+            document.getElementById('header-nick-preview').innerText = userProfile.nickname;
+            document.getElementById('posting-as-preview').innerText = userProfile.nickname;
+        }
+
+        window.openProfileModal = function() {
+            document.getElementById('profile-modal').classList.remove('hidden');
+            document.getElementById('nickname-input').value = userProfile.nickname.replace('@', '');
+            
+            // Marcar avatar seleccionado
+            document.querySelectorAll('.avatar-option').forEach(el => {
+                if (el.innerText === userProfile.avatar) {
+                    el.classList.add('selected');
+                } else {
+                    el.classList.remove('selected');
+                }
+            });
+        };
+
+        window.closeProfileModal = () => document.getElementById('profile-modal').classList.add('hidden');
+
+        window.selectAvatar = function(emoji, element) {
+            document.querySelectorAll('.avatar-option').forEach(el => el.classList.remove('selected'));
+            element.classList.add('selected');
+            // Guardamos temporalmente en el elemento input (o variable global temp)
+            window.tempAvatar = emoji; 
+        };
+
+        window.saveProfile = function() {
+            const nickInput = document.getElementById('nickname-input').value.trim();
+            const finalNick = nickInput ? '@' + nickInput : '@AnonimoMX';
+            const finalAvatar = window.tempAvatar || userProfile.avatar;
+
+            userProfile = { nickname: finalNick, avatar: finalAvatar };
+            localStorage.setItem('chismes_profile', JSON.stringify(userProfile));
+            
+            updateHeaderUI();
+            window.closeProfileModal();
+            window.showToast("¡Identidad actualizada!", "success");
+        };
+
+        // 3. Funciones Globales
+        window.requestLocation = function(silent = false) {
+            if (!navigator.geolocation) return;
+            if(!silent) window.showToast("Buscando señal GPS...", "info");
+            
+            navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                    userLat = pos.coords.latitude;
+                    userLng = pos.coords.longitude;
+                    map.flyTo([userLat, userLng], 15);
+                    if (window.userMarker) map.removeLayer(window.userMarker);
+                    window.userMarker = L.circleMarker([userLat, userLng], {
+                        radius: 8, fillColor: "#3b82f6", color: "#fff", weight: 3, fillOpacity: 1
+                    }).addTo(map).bindPopup("Tu ubicación aproximada");
+                    if(!silent) window.showToast("¡Ubicación encontrada!", "success");
+                },
+                () => { if(!silent) window.showToast("No se pudo obtener ubicación", "error"); }
+            );
+        };
+
+        // --- FUNCIÓN PUBLICAR (Actualizada con Perfil) ---
+        window.submitChisme = async function() {
+            const btn = document.getElementById('btn-submit');
+            const txt = document.getElementById('chisme-content').value.trim();
+            
+            if (!txt) return window.showToast("¡Escribe algo primero!", "error");
+            
+            // Bloquear UI
+            const textoOriginal = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Enviando...';
+
+            if (!userLat) {
+                window.requestLocation();
+                btn.disabled = false;
+                btn.innerHTML = textoOriginal;
+                return window.showToast("Necesitamos tu ubicación primero", "error");
+            }
+
+            // Ofuscación
+            const offset = 0.003; 
+            const safeLat = userLat + (Math.random() - 0.5) * offset;
+            const safeLng = userLng + (Math.random() - 0.5) * offset;
+
+            try {
+                // Incluimos nickname y avatar en el objeto
+                await addDoc(collection(db, 'chismes'), {
+                    text: txt, 
+                    category: currentCategory,
+                    lat: safeLat, 
+                    lng: safeLng,
+                    timestamp: new Date().toISOString(), 
+                    likes: 0,
+                    authorNick: userProfile.nickname, // NUEVO
+                    authorAvatar: userProfile.avatar  // NUEVO
+                });
+
+                window.showToast("¡Chisme publicado!", "success");
+                document.getElementById('chisme-content').value = "";
+                window.closePostModal();
+
+            } catch (e) {
+                console.error(e);
+                window.showToast("Error al enviar.", "error");
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = textoOriginal;
+            }
+        };
+
+        // UI Helpers
+        window.openPostModal = () => document.getElementById('post-modal').classList.remove('hidden');
+        window.closePostModal = () => document.getElementById('post-modal').classList.add('hidden');
+        
+        window.selectCategory = (cat, btn) => {
+            currentCategory = cat;
+            document.querySelectorAll('.category-btn').forEach(b => b.classList.remove('active', 'ring-2'));
+            btn.classList.add('active', 'ring-2');
+        };
+
+        window.showToast = (msg, type) => {
+            const t = document.getElementById('toast');
+            const icon = document.getElementById('toast-icon');
+            document.getElementById('toast-msg').innerText = msg;
+            
+            if(type === 'error') {
+                icon.className = "fa-solid fa-circle-exclamation text-red-400 text-lg";
+                icon.style.color = "#f87171";
+            } else if (type === 'success') {
+                icon.className = "fa-solid fa-check-circle text-green-400 text-lg";
+                icon.style.color = "#4ade80";
+            } else {
+                icon.className = "fa-solid fa-info-circle text-blue-400 text-lg";
+            }
+
+            t.classList.remove('opacity-0', 'pointer-events-none', '-translate-y-4');
+            setTimeout(() => {
+                t.classList.add('opacity-0', 'pointer-events-none', '-translate-y-4');
+            }, 3000);
+        };
+
+        // Mapa
+        function initMap() {
+            map = L.map('map', { zoomControl: false }).setView([23.6345, -102.5528], 5);
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_labels_under/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; OpenStreetMap'
+            }).addTo(map);
+        }
+
+        function loadChismes() {
+            onSnapshot(collection(db, 'chismes'), (snap) => {
+                snap.docChanges().forEach(c => {
+                    if (c.type === "added") renderMarker(c.doc.id, c.doc.data());
+                });
+            });
+        }
+
+        function renderMarker(id, data) {
+            if (processedDocs.has(id)) return;
+            processedDocs.add(id);
+            
+            const colors = { 'picante': '#ef4444', 'amor': '#ec4899', 'barrio': '#3b82f6' };
+            const icons = { 'picante': 'fa-fire', 'amor': 'fa-heart', 'barrio': 'fa-building' };
+            const c = colors[data.category] || colors.picante;
+            const i = icons[data.category] || 'fa-comment';
+
+            // Usamos el avatar si existe, si no, el icono por defecto
+            const sticker = data.authorAvatar || `<i class="fa-solid ${i}"></i>`;
+            const nick = data.authorNick || "@Anonimo";
+
+            // Si es un sticker (emoji), quitamos el fondo de color sólido para que se vea limpio, 
+            // o lo dejamos pequeño en la esquina. Aquí mantengo el diseño de pin pero mejorado.
+            
+            const icon = L.divIcon({
+                className: 'custom-div-icon',
+                html: `<div class="marker-pin" style="background-color:${c}">
+                        <span style="transform: rotate(45deg); font-size: 18px;">${data.authorAvatar ? data.authorAvatar : '<i class="fa-solid '+i+' text-white"></i>'}</span>
+                       </div>`,
+                iconSize: [36, 36], iconAnchor: [18, 36]
+            });
+
+            const marker = L.marker([data.lat, data.lng], {icon}).addTo(map);
+            
+            // Popup Mejorado con Avatar y Nick
+            const popupContent = `
+                <div class="p-3 min-w-[220px]">
+                    <div class="flex items-center gap-2 mb-2 border-b border-gray-100 pb-2">
+                        <span class="text-xl bg-gray-50 rounded-full w-8 h-8 flex items-center justify-center">${data.authorAvatar || '👻'}</span>
+                        <div>
+                            <p class="text-xs font-bold text-gray-800">${nick}</p>
+                            <p class="text-[9px] uppercase font-bold text-gray-400 tracking-wider">${data.category}</p>
+                        </div>
+                    </div>
+                    <p class="text-sm font-medium text-gray-700 leading-snug mb-2">"${data.text}"</p>
+                    <div class="flex justify-end">
+                         <span class="text-[10px] text-gray-400 italic">Hace un momento</span>
+                    </div>
+                </div>
+            `;
+            marker.bindPopup(popupContent);
+        }
+    </script>
+</body>
+</html>
