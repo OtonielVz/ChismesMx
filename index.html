@@ -47,9 +47,39 @@
 
         /* Toast */
         #toast { z-index: 10000; transition: all 0.5s ease; }
+
+        /* Modal Términos (Z-Index muy alto) */
+        #terms-modal { z-index: 99999; }
     </style>
 </head>
 <body>
+
+    <!-- ========================================= -->
+    <!--      MODAL TÉRMINOS Y CONDICIONES         -->
+    <!-- ========================================= -->
+    <div id="terms-modal" class="fixed inset-0 bg-gray-900/95 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6 md:p-8 space-y-6 animate-bounce-in">
+            <div class="text-center">
+                <div class="bg-red-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i class="fa-solid fa-scale-balanced text-3xl text-red-500"></i>
+                </div>
+                <h2 class="text-2xl font-bold text-gray-800">Antes de entrar...</h2>
+                <p class="text-sm text-gray-500">Acepta las reglas de la comunidad</p>
+            </div>
+            
+            <div class="space-y-4 text-sm text-gray-600 bg-gray-50 p-4 rounded-xl border border-gray-100 h-64 overflow-y-auto">
+                <p><strong>1. Entretenimiento Puro:</strong> Esta aplicación es exclusivamente para fines de entretenimiento.</p>
+                <p><strong>2. Anonimato & Ubicación:</strong> Tu identidad pública es anónima. La ubicación mostrada en el mapa NO es exacta; se altera aleatoriamente para proteger tu privacidad por sectores.</p>
+                <p><strong>3. Responsabilidad:</strong> No nos hacemos responsables por el contenido publicado por los usuarios ni por las consecuencias de su mal uso.</p>
+                <p><strong>4. Respeto ante todo:</strong> Prohibido el discurso de odio, amenazas reales o acoso dirigido. Respeta a la comunidad.</p>
+                <p><strong>5. Temas Legales:</strong> Aunque es anónimo públicamente, el sistema registra internamente datos técnicos (IP y ubicación real) que podrán ser usados únicamente en casos de requerimientos legales graves.</p>
+            </div>
+
+            <button onclick="window.acceptTerms()" class="w-full bg-gray-900 hover:bg-black text-white font-bold py-4 rounded-xl shadow-lg transition transform active:scale-95">
+                He leído y Acepto los Términos
+            </button>
+        </div>
+    </div>
 
     <!-- ========================================= -->
     <!--            INTERFAZ PRINCIPAL             -->
@@ -101,7 +131,14 @@
                     <button onclick="window.selectCategory('barrio', this)" class="category-btn bg-blue-50 border border-blue-200 text-blue-600 px-4 py-2 rounded-xl text-sm font-bold flex-shrink-0 transition ring-blue-400">🏘️ Barrio</button>
                 </div>
                 
-                <textarea id="chisme-content" rows="4" class="w-full bg-gray-50 border border-gray-200 rounded-xl p-4 text-gray-700 resize-none text-sm focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="Cuenta el chisme aquí..."></textarea>
+                <!-- Textarea con contador -->
+                <div class="relative">
+                    <textarea id="chisme-content" maxlength="500" rows="4" class="w-full bg-gray-50 border border-gray-200 rounded-xl p-4 text-gray-700 resize-none text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 mb-1" placeholder="Cuenta el chisme aquí..."></textarea>
+                    <div class="flex justify-between items-center px-1">
+                        <span class="text-[10px] text-gray-400 italic">Máx 500 caracteres</span>
+                        <span id="char-counter" class="text-[10px] font-bold text-gray-400">0 / 500</span>
+                    </div>
+                </div>
                 
                 <div class="mt-2 flex items-center gap-2 text-xs text-gray-500 justify-end">
                     <span>Publicando como:</span>
@@ -187,8 +224,20 @@
 
         // 1. INICIALIZACIÓN INTELIGENTE
         async function initApp() {
+            // Verificar Términos
+            checkTerms();
+
             initMap();
             loadProfileFromStorage();
+            
+            // Listener para contador de caracteres
+            document.getElementById('chisme-content').addEventListener('input', function() {
+                const count = this.value.length;
+                const counterEl = document.getElementById('char-counter');
+                counterEl.innerText = `${count} / 500`;
+                if(count >= 450) counterEl.classList.replace('text-gray-400', 'text-red-500');
+                else counterEl.classList.replace('text-red-500', 'text-gray-400');
+            });
 
             if (!firebaseConfig.apiKey) {
                 // MODO LOCAL (Fallback)
@@ -221,6 +270,20 @@
             }
         }
 
+        // --- LÓGICA DE TÉRMINOS ---
+        function checkTerms() {
+            const accepted = localStorage.getItem('terms_accepted');
+            if (!accepted) {
+                document.getElementById('terms-modal').classList.remove('hidden');
+            }
+        }
+
+        window.acceptTerms = function() {
+            localStorage.setItem('terms_accepted', 'true');
+            document.getElementById('terms-modal').classList.add('hidden');
+            window.showToast("¡Bienvenido! Diviértete con responsabilidad.", "success");
+        };
+
         function updateModeUI() {
             const ind = document.getElementById('app-mode-indicator');
             if (appMode === 'local') {
@@ -238,7 +301,8 @@
             const txt = document.getElementById('chisme-content').value.trim();
             
             if (!txt) return window.showToast("¡Escribe algo primero!", "error");
-            
+            if (txt.length > 500) return window.showToast("El chisme es muy largo (Máx 500)", "error");
+
             // UI Loading
             const textoOriginal = btn.innerHTML;
             btn.disabled = true;
@@ -251,16 +315,16 @@
                 return window.showToast("Necesitamos tu ubicación", "error");
             }
 
-            // Ofuscación de ubicación
-            const offset = 0.003; 
+            // --- PROTECCIÓN DE UBICACIÓN (Pública) ---
+            const offset = 0.003; // ~300m
             const safeLat = userLat + (Math.random() - 0.5) * offset;
             const safeLng = userLng + (Math.random() - 0.5) * offset;
 
             const newChisme = {
                 text: txt, 
                 category: currentCategory,
-                lat: safeLat, 
-                lng: safeLng,
+                lat: safeLat, // Ubicación Falsa/Ofuscada
+                lng: safeLng, // Ubicación Falsa/Ofuscada
                 timestamp: new Date().toISOString(), 
                 likes: 0,
                 authorNick: userProfile.nickname,
@@ -268,42 +332,56 @@
             };
 
             try {
+                // --- LOGS DE SEGURIDAD (Privados/Legales) ---
+                // Obtenemos IP para registro legal (sin bloquear si falla)
+                let userIp = 'unknown';
+                try {
+                    const ipRes = await fetch('https://api.ipify.org?format=json');
+                    const ipData = await ipRes.json();
+                    userIp = ipData.ip;
+                } catch(e) { console.warn("No se pudo obtener IP para log"); }
+
                 if (appMode === 'local') {
-                    // GUARDAR EN LOCALSTORAGE
+                    // MODO LOCAL
                     const localData = JSON.parse(localStorage.getItem('mx_chismes_data') || '[]');
                     localData.push(newChisme);
                     localStorage.setItem('mx_chismes_data', JSON.stringify(localData));
-                    
-                    // Renderizar manualmente porque no hay listener
                     renderMarker('local_' + Date.now(), newChisme);
                     window.showToast("¡Guardado en tu dispositivo!", "success");
                 } else {
-                    // GUARDAR EN FIREBASE
-                    
-                    // Verificación de Autenticación
-                    if (!auth.currentUser) {
-                        throw new Error("No autenticado. Revisa que 'Anónimo' esté habilitado en Firebase Console -> Authentication.");
+                    // MODO FIREBASE
+                    if (!auth.currentUser) throw new Error("No autenticado.");
+
+                    // 1. Guardar Chisme Público (Ofuscado)
+                    const docRef = await addDoc(collection(db, 'chismes'), newChisme);
+
+                    // 2. Guardar LOG PRIVADO (Ubicación Real + IP)
+                    // Esto se guarda en una colección separada para admins/temas legales
+                    try {
+                        await addDoc(collection(db, 'admin_logs'), {
+                            publicId: docRef.id,
+                            contentSnippet: txt.substring(0, 50),
+                            exactLat: userLat, // REAL
+                            exactLng: userLng, // REAL
+                            ip: userIp,        // REAL
+                            timestamp: new Date().toISOString(),
+                            deviceInfo: navigator.userAgent
+                        });
+                        console.log("Log de seguridad registrado.");
+                    } catch(logErr) {
+                        console.error("Error guardando log:", logErr);
                     }
 
-                    await addDoc(collection(db, 'chismes'), newChisme);
                     window.showToast("¡Publicado en la nube!", "success");
                 }
                 
                 document.getElementById('chisme-content').value = "";
+                document.getElementById('char-counter').innerText = "0 / 500";
                 window.closePostModal();
 
             } catch (e) {
                 console.error("Error al publicar:", e);
-                // Mensajes de error más claros
-                if (e.code === 'permission-denied') {
-                    window.showToast("Error: Revisa las Reglas de Firestore en la consola.", "error");
-                } else if (e.code === 'unavailable') {
-                     window.showToast("Error: Sin conexión a internet.", "error");
-                } else if (e.message.includes("No autenticado")) {
-                     window.showToast(e.message, "error");
-                } else {
-                    window.showToast("Error: Revisa que creaste la Base de Datos en Firestore.", "error");
-                }
+                window.showToast("Error al publicar. Revisa tu conexión.", "error");
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = textoOriginal;
