@@ -3,7 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Chismes MX - Chat</title>
+    
+    <!-- Configuración PWA (Android) -->
+    <title>Chismes MX</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#9333ea">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/1608/1608827.png">
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -18,13 +25,13 @@
     <!-- Leaflet Script -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-    <!-- Librería ligera para fechas relativas (Day.js) -->
+    <!-- Day.js -->
     <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dayjs@1/locale/es.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dayjs@1/plugin/relativeTime.js"></script>
 
     <style>
-        body { font-family: 'Poppins', sans-serif; background-color: #e5e7eb; height: 100vh; overflow: hidden; }
+        body { font-family: 'Poppins', sans-serif; background-color: #e5e7eb; height: 100vh; overflow: hidden; overscroll-behavior: none; }
         #map { height: 100%; width: 100%; z-index: 1; }
         
         /* Pines */
@@ -133,8 +140,8 @@
         <!-- === ESPACIO PUBLICITARIO MENÚ (ADSENSE) === -->
         <div class="p-3 bg-gray-50 border-t border-gray-100">
             <div class="w-full h-24 bg-gray-200 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center text-gray-400">
-<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6958919259026953"
-     crossorigin="anonymous"></script>                <i class="fa-solid fa-rectangle-ad text-2xl mb-1"></i>
+                <!-- 👇 AQUÍ PEGAS TU CÓDIGO DE GOOGLE ADSENSE (Display Ad) 👇 -->
+                <i class="fa-solid fa-rectangle-ad text-2xl mb-1"></i>
                 <span class="text-[10px] font-bold">ESPACIO PUBLICITARIO</span>
                 <span class="text-[9px]">Google AdSense</span>
                 <!-- 👆 --------------------------------------------------- 👆 -->
