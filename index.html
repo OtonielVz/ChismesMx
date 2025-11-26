@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Chismes MX - Híbrido</title>
+    <title>Chismes MX - Chat</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- Leaflet CSS (Mapas) -->
+    <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
     
     <!-- Font Awesome -->
@@ -18,8 +18,13 @@
     <!-- Leaflet Script -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
+    <!-- Librería ligera para fechas relativas (Day.js) -->
+    <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dayjs@1/locale/es.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dayjs@1/plugin/relativeTime.js"></script>
+
     <style>
-        body { font-family: 'Poppins', sans-serif; background-color: #f8fafc; height: 100vh; overflow: hidden; }
+        body { font-family: 'Poppins', sans-serif; background-color: #e5e7eb; height: 100vh; overflow: hidden; }
         #map { height: 100%; width: 100%; z-index: 1; }
         
         /* Pines */
@@ -31,97 +36,24 @@
             display: flex; align-items: center; justify-content: center;
             border: 2px solid white;
         }
-        .marker-pin i { transform: rotate(45deg); color: white; font-size: 16px; }
 
-        /* Animaciones */
-        .fade-in { animation: fadeIn 0.3s ease-in-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        /* Chat Styles */
+        .chat-bg { background-color: #efeae2; background-image: url("https://www.transparenttextures.com/patterns/subtle-white-feathers.png"); }
+        .bubble-me { background-color: #dcf8c6; border-radius: 8px 0 8px 8px; box-shadow: 0 1px 1px rgba(0,0,0,0.1); }
+        .bubble-other { background-color: #ffffff; border-radius: 0 8px 8px 8px; box-shadow: 0 1px 1px rgba(0,0,0,0.1); }
+        .bubble-original { background-color: #fffbeb; border-left: 4px solid #f59e0b; }
 
-        /* Categorías */
-        .category-btn.active { ring-width: 2px; ring-offset-width: 2px; transform: scale(1.05); }
-        
         /* Avatars */
-        .avatar-option { transition: all 0.2s; cursor: pointer; border: 2px solid transparent; }
-        .avatar-option:hover { transform: scale(1.1); }
         .avatar-option.selected { border-color: #9333ea; background-color: #f3e8ff; transform: scale(1.1); }
-
-        /* Toast */
-        #toast { z-index: 10000; transition: all 0.5s ease; }
-
-        /* Modal Términos (Z-Index muy alto) */
-        #terms-modal { z-index: 99999; }
         
-        /* Modal Diagnóstico */
-        #diag-modal { z-index: 100000; }
+        /* Z-Index Layers */
+        #config-overlay { z-index: 99999; }
+        #toast { z-index: 100000; transition: all 0.5s ease; }
+        #post-modal, #profile-modal { z-index: 5000; }
+        #thread-modal { z-index: 6000; } /* Chat encima de todo */
     </style>
 </head>
 <body>
-
-    <!-- ========================================= -->
-    <!--      MODAL TÉRMINOS Y CONDICIONES         -->
-    <!-- ========================================= -->
-    <div id="terms-modal" class="fixed inset-0 bg-gray-900/95 backdrop-blur-sm flex items-center justify-center p-4 hidden">
-        <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6 md:p-8 space-y-6 animate-bounce-in">
-            <div class="text-center">
-                <div class="bg-red-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <i class="fa-solid fa-scale-balanced text-3xl text-red-500"></i>
-                </div>
-                <h2 class="text-2xl font-bold text-gray-800">Antes de entrar...</h2>
-                <p class="text-sm text-gray-500">Acepta las reglas de la comunidad</p>
-            </div>
-            
-            <div class="space-y-4 text-sm text-gray-600 bg-gray-50 p-4 rounded-xl border border-gray-100 h-64 overflow-y-auto">
-                <p><strong>1. Entretenimiento Puro:</strong> Esta aplicación es exclusivamente para fines de entretenimiento.</p>
-                <p><strong>2. Anonimato & Ubicación:</strong> Tu identidad pública es anónima. La ubicación mostrada en el mapa NO es exacta; se altera aleatoriamente para proteger tu privacidad por sectores.</p>
-                <p><strong>3. Responsabilidad:</strong> No nos hacemos responsables por el contenido publicado por los usuarios ni por las consecuencias de su mal uso.</p>
-                <p><strong>4. Respeto ante todo:</strong> Prohibido el discurso de odio, amenazas reales o acoso dirigido. Respeta a la comunidad.</p>
-                <p><strong>5. Temas Legales:</strong> Aunque es anónimo públicamente, el sistema registra internamente datos técnicos (IP y ubicación real) que podrán ser usados únicamente en casos de requerimientos legales graves.</p>
-            </div>
-
-            <button onclick="window.acceptTerms()" class="w-full bg-gray-900 hover:bg-black text-white font-bold py-4 rounded-xl shadow-lg transition transform active:scale-95">
-                He leído y Acepto los Términos
-            </button>
-        </div>
-    </div>
-
-    <!-- ========================================= -->
-    <!--      MODAL DIAGNÓSTICO DE ERROR           -->
-    <!-- ========================================= -->
-    <div id="diag-modal" class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 hidden">
-        <div class="bg-white w-full max-w-lg rounded-3xl shadow-2xl p-6 relative">
-            <button onclick="document.getElementById('diag-modal').classList.add('hidden')" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><i class="fa-solid fa-times text-xl"></i></button>
-            
-            <div class="text-center mb-6">
-                <div class="bg-red-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
-                    <i class="fa-solid fa-triangle-exclamation text-4xl text-red-500"></i>
-                </div>
-                <h2 class="text-2xl font-bold text-gray-900">Problema de Conexión</h2>
-                <p class="text-sm text-gray-500 mt-2">No pudimos guardar el chisme en la nube.</p>
-            </div>
-
-            <div class="bg-gray-100 rounded-xl p-4 text-left text-sm font-mono text-gray-700 overflow-x-auto mb-6 border-l-4 border-red-500">
-                <p id="diag-error-msg">Analizando...</p>
-            </div>
-
-            <div class="space-y-3">
-                <h3 class="font-bold text-gray-800 text-sm">Posibles Soluciones:</h3>
-                <ul class="text-sm text-gray-600 space-y-2 list-disc pl-5">
-                    <li>Ve a <strong>Firebase Console > Firestore Database > Reglas</strong>.</li>
-                    <li>Asegúrate de que digan <code>allow read, write: if true;</code> (solo para pruebas) o <code>if request.auth != null;</code>.</li>
-                    <li>Verifica que la base de datos esté creada en modo <strong>Producción</strong> o <strong>Prueba</strong> y no esté vacía/desactivada.</li>
-                </ul>
-            </div>
-            
-            <div class="mt-6 flex gap-3">
-                <button onclick="window.retryConnection()" class="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-xl transition">
-                    Reintentar Conexión
-                </button>
-                <button onclick="document.getElementById('diag-modal').classList.add('hidden')" class="px-4 py-3 text-gray-500 font-bold hover:bg-gray-100 rounded-xl transition">
-                    Cerrar
-                </button>
-            </div>
-        </div>
-    </div>
 
     <!-- ========================================= -->
     <!--            INTERFAZ PRINCIPAL             -->
@@ -129,20 +61,16 @@
 
     <!-- Header -->
     <div class="absolute top-4 left-4 right-4 z-[1000] flex justify-between items-start pointer-events-none">
-        <div class="bg-white/95 backdrop-blur shadow-lg rounded-2xl p-3 flex items-center gap-3 pointer-events-auto border border-purple-100">
-            <!-- Botón Perfil -->
-            <button onclick="window.openProfileModal()" class="w-10 h-10 bg-gradient-to-br from-purple-600 to-pink-500 rounded-full flex items-center justify-center text-white text-lg shadow hover:scale-105 transition active:scale-95 border-2 border-white">
+        <div class="bg-white/95 backdrop-blur shadow-lg rounded-2xl p-3 flex items-center gap-3 pointer-events-auto border border-purple-100 cursor-pointer" onclick="window.openProfileModal()">
+            <button class="w-10 h-10 bg-gradient-to-br from-purple-600 to-pink-500 rounded-full flex items-center justify-center text-white text-lg shadow border-2 border-white">
                 <span id="header-avatar-preview">👻</span>
             </button>
             <div>
                 <h1 class="font-bold text-gray-800 leading-none">Chismes MX</h1>
-                <p id="app-mode-indicator" class="text-[10px] text-gray-500 font-medium mt-1">
-                    Cargando...
-                </p>
+                <p id="app-mode-indicator" class="text-[10px] text-gray-500 font-medium mt-1">Cargando...</p>
             </div>
         </div>
         
-        <!-- Botón GPS -->
         <button onclick="window.requestLocation()" class="pointer-events-auto bg-white hover:bg-gray-50 text-gray-700 shadow-lg rounded-full w-12 h-12 flex items-center justify-center transition active:scale-95 border border-gray-200">
             <i class="fa-solid fa-location-crosshairs text-xl text-blue-500"></i>
         </button>
@@ -158,12 +86,53 @@
         </button>
     </div>
 
-    <!-- Modal: Publicar Chisme -->
-    <div id="post-modal" class="fixed inset-0 z-[2000] hidden flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-        <div class="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden fade-in relative">
+    <!-- ========================================= -->
+    <!--            MODAL DE HILO (CHAT)           -->
+    <!-- ========================================= -->
+    <div id="thread-modal" class="fixed inset-0 hidden bg-black/50 backdrop-blur-sm flex items-center justify-center sm:p-4">
+        <div class="bg-white w-full h-full sm:h-[85vh] sm:max-w-md sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden relative animate-fade-in-up">
+            
+            <!-- Chat Header -->
+            <div class="bg-gray-100 p-4 flex items-center gap-3 border-b border-gray-200 shadow-sm z-10">
+                <button onclick="window.closeThread()" class="text-gray-600 hover:bg-gray-200 p-2 rounded-full"><i class="fa-solid fa-arrow-left"></i></button>
+                <div class="flex-1">
+                    <h3 class="font-bold text-gray-800">Discusión</h3>
+                    <p class="text-xs text-green-600" id="thread-status">En línea</p>
+                </div>
+            </div>
+
+            <!-- Chat Body (Scrollable) -->
+            <div id="chat-container" class="flex-1 overflow-y-auto p-4 chat-bg space-y-4">
+                <!-- El Chisme Original (Sticky top visualmente) -->
+                <div id="original-post-container" class="mb-6 shadow-md rounded-lg overflow-hidden">
+                    <!-- Se llena con JS -->
+                </div>
+                
+                <!-- Lista de Respuestas -->
+                <div id="replies-list" class="space-y-3 pb-4">
+                    <!-- Se llena con JS -->
+                    <p class="text-center text-gray-400 text-xs italic mt-4">Sé el primero en responder...</p>
+                </div>
+            </div>
+
+            <!-- Chat Input Footer -->
+            <div class="bg-gray-100 p-3 border-t border-gray-200 flex items-center gap-2">
+                <input type="text" id="reply-input" class="flex-1 bg-white border border-gray-300 rounded-full px-4 py-3 focus:outline-none focus:border-purple-500 text-sm" placeholder="Escribe una respuesta...">
+                <button onclick="window.submitReply()" id="btn-reply" class="bg-purple-600 hover:bg-purple-700 text-white w-12 h-12 rounded-full flex items-center justify-center shadow transition transform active:scale-90">
+                    <i class="fa-solid fa-paper-plane"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================= -->
+    <!--           MODAL PUBLICAR CHISME           -->
+    <!-- ========================================= -->
+    <div id="post-modal" class="fixed inset-0 hidden flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div class="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden relative">
             <div class="bg-gradient-to-r from-purple-600 to-pink-500 p-6 text-white flex justify-between items-center">
                 <h2 class="font-bold text-xl">Nuevo Chisme</h2>
-                <button onclick="window.closePostModal()" class="bg-white/20 hover:bg-white/30 rounded-full w-8 h-8 flex items-center justify-center transition"><i class="fa-solid fa-times"></i></button>
+                <button onclick="window.closePostModal()" class="bg-white/20 rounded-full w-8 h-8 flex items-center justify-center"><i class="fa-solid fa-times"></i></button>
             </div>
             <div class="p-6">
                 <label class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 block">Elige el tono</label>
@@ -172,67 +141,46 @@
                     <button onclick="window.selectCategory('amor', this)" class="category-btn bg-pink-50 border border-pink-200 text-pink-600 px-4 py-2 rounded-xl text-sm font-bold flex-shrink-0 transition ring-pink-400">💘 Amor</button>
                     <button onclick="window.selectCategory('barrio', this)" class="category-btn bg-blue-50 border border-blue-200 text-blue-600 px-4 py-2 rounded-xl text-sm font-bold flex-shrink-0 transition ring-blue-400">🏘️ Barrio</button>
                 </div>
-                
-                <!-- Textarea con contador -->
-                <div class="relative">
-                    <textarea id="chisme-content" maxlength="500" rows="4" class="w-full bg-gray-50 border border-gray-200 rounded-xl p-4 text-gray-700 resize-none text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 mb-1" placeholder="Cuenta el chisme aquí..."></textarea>
-                    <div class="flex justify-between items-center px-1">
-                        <span class="text-[10px] text-gray-400 italic">Máx 500 caracteres</span>
-                        <span id="char-counter" class="text-[10px] font-bold text-gray-400">0 / 500</span>
-                    </div>
-                </div>
-                
+                <textarea id="chisme-content" maxlength="280" rows="4" class="w-full bg-gray-50 border border-gray-200 rounded-xl p-4 text-gray-700 resize-none text-sm focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="¿Qué está pasando?"></textarea>
                 <div class="mt-2 flex items-center gap-2 text-xs text-gray-500 justify-end">
-                    <span>Publicando como:</span>
                     <strong class="text-purple-600" id="posting-as-preview">@Anonimo</strong>
                 </div>
-
-                <button onclick="window.submitChisme()" id="btn-submit" class="w-full mt-4 bg-gray-900 text-white font-bold py-3.5 rounded-xl shadow-lg flex justify-center items-center gap-2 hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition">
-                    <i class="fa-solid fa-paper-plane"></i> <span>Publicar</span>
-                </button>
+                <button onclick="window.submitChisme()" id="btn-submit" class="w-full mt-4 bg-gray-900 text-white font-bold py-3.5 rounded-xl shadow-lg flex justify-center items-center gap-2">Publicar</button>
             </div>
         </div>
     </div>
 
-    <!-- Modal: Configurar Perfil -->
-    <div id="profile-modal" class="fixed inset-0 z-[2000] hidden flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-        <div class="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden fade-in relative">
+    <!-- ========================================= -->
+    <!--           MODAL PERFIL                    -->
+    <!-- ========================================= -->
+    <div id="profile-modal" class="fixed inset-0 hidden flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div class="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden relative">
             <div class="bg-gray-900 p-6 text-white flex justify-between items-center">
-                <h2 class="font-bold text-xl">Tu Identidad Secreta</h2>
-                <button onclick="window.closeProfileModal()" class="bg-white/20 hover:bg-white/30 rounded-full w-8 h-8 flex items-center justify-center transition"><i class="fa-solid fa-times"></i></button>
+                <h2 class="font-bold text-xl">Tu Identidad</h2>
+                <button onclick="window.closeProfileModal()" class="bg-white/20 rounded-full w-8 h-8 flex items-center justify-center"><i class="fa-solid fa-times"></i></button>
             </div>
             <div class="p-6">
-                <!-- Avatar Grid -->
-                <label class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 block">Elige tu Sticker</label>
+                <label class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 block">Sticker</label>
                 <div class="grid grid-cols-4 gap-3 mb-6">
                     <div onclick="window.selectAvatar('👻', this)" class="avatar-option rounded-xl bg-gray-50 h-14 flex items-center justify-center text-2xl">👻</div>
                     <div onclick="window.selectAvatar('👽', this)" class="avatar-option rounded-xl bg-gray-50 h-14 flex items-center justify-center text-2xl">👽</div>
                     <div onclick="window.selectAvatar('🦊', this)" class="avatar-option rounded-xl bg-gray-50 h-14 flex items-center justify-center text-2xl">🦊</div>
                     <div onclick="window.selectAvatar('🤡', this)" class="avatar-option rounded-xl bg-gray-50 h-14 flex items-center justify-center text-2xl">🤡</div>
-                    <div onclick="window.selectAvatar('🤖', this)" class="avatar-option rounded-xl bg-gray-50 h-14 flex items-center justify-center text-2xl">🤖</div>
+                    <div onclick="window.selectAvatar('🤠', this)" class="avatar-option rounded-xl bg-gray-50 h-14 flex items-center justify-center text-2xl">🤠</div>
                     <div onclick="window.selectAvatar('💀', this)" class="avatar-option rounded-xl bg-gray-50 h-14 flex items-center justify-center text-2xl">💀</div>
-                    <div onclick="window.selectAvatar('🦉', this)" class="avatar-option rounded-xl bg-gray-50 h-14 flex items-center justify-center text-2xl">🦉</div>
-                    <div onclick="window.selectAvatar('🦄', this)" class="avatar-option rounded-xl bg-gray-50 h-14 flex items-center justify-center text-2xl">🦄</div>
+                    <div onclick="window.selectAvatar('👀', this)" class="avatar-option rounded-xl bg-gray-50 h-14 flex items-center justify-center text-2xl">👀</div>
+                    <div onclick="window.selectAvatar('🌮', this)" class="avatar-option rounded-xl bg-gray-50 h-14 flex items-center justify-center text-2xl">🌮</div>
                 </div>
-
-                <!-- Nickname Input -->
-                <label class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 block">Tu Apodo Anónimo</label>
-                <div class="relative">
-                    <span class="absolute left-4 top-3.5 text-gray-400 font-bold">@</span>
-                    <input type="text" id="nickname-input" class="w-full bg-gray-50 border border-gray-200 rounded-xl py-3 pl-8 pr-4 text-gray-700 font-bold focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="anonimoMX" maxlength="15">
-                </div>
-
-                <button onclick="window.saveProfile()" class="w-full mt-6 bg-purple-600 text-white font-bold py-3.5 rounded-xl shadow-lg hover:bg-purple-700 transition">
-                    Guardar Identidad
-                </button>
+                <label class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 block">Apodo</label>
+                <input type="text" id="nickname-input" class="w-full bg-gray-50 border border-gray-200 rounded-xl py-3 px-4 text-gray-700 font-bold focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="Ej. ElVengador" maxlength="15">
+                <button onclick="window.saveProfile()" class="w-full mt-6 bg-purple-600 text-white font-bold py-3.5 rounded-xl shadow-lg">Guardar</button>
             </div>
         </div>
     </div>
 
     <!-- Toast -->
     <div id="toast" class="fixed top-24 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-6 py-4 rounded-full shadow-2xl flex items-center gap-3 text-sm font-medium opacity-0 pointer-events-none transform -translate-y-4">
-        <i id="toast-icon" class="fa-solid fa-info-circle text-blue-400 text-lg"></i> 
-        <span id="toast-msg">Mensaje</span>
+        <i id="toast-icon" class="fa-solid fa-info-circle text-blue-400 text-lg"></i> <span id="toast-msg">Mensaje</span>
     </div>
 
     <!-- ========================================= -->
@@ -241,10 +189,14 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, onSnapshot, setDoc, doc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, doc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Configuración de Fechas (Day.js)
+        dayjs.locale('es');
+        dayjs.extend(window.dayjs_plugin_relativeTime);
 
         // -------------------------------------------------------------
-        // 👇 CONFIGURACIÓN FIREBASE (TUS LLAVES)
+        // 👇 TUS LLAVES (MANTENER LAS QUE YA FUNCIONAN) 👇
         // -------------------------------------------------------------
         const firebaseConfig = {
             apiKey: "AIzaSyBOEBlrI2pw0K3PA0k-ofE7xKDrl39Znyc",
@@ -255,27 +207,21 @@
             appId: "1:790491958008:web:1a5e84de877053bb36490d",
             measurementId: "G-QP2TXX6EGK"
         };
-        // -------------------------------------------------------------
 
-        // Variables Globales
+        // Estado Global
         let app, auth, db, map, userLat, userLng;
-        let appMode = 'local'; // 'local' o 'firebase'
+        let appMode = 'local';
         let currentCategory = 'picante';
         let userProfile = { avatar: '👻', nickname: '@AnonimoMX' };
-        const processedDocs = new Set(); // Evitar duplicados visuales
+        let activeThreadId = null; // ID del chisme abierto actualmente
+        let unsubscribeReplies = null; // Para detener el listener del chat
+        const processedDocs = new Set();
 
-        // 1. INICIALIZACIÓN INTELIGENTE
+        // Inicializar
         async function initApp() {
-            checkTerms();
             initMap();
             loadProfileFromStorage();
             
-            // UI Helpers
-            document.getElementById('chisme-content').addEventListener('input', function() {
-                const count = this.value.length;
-                document.getElementById('char-counter').innerText = `${count} / 500`;
-            });
-
             if (!firebaseConfig.apiKey) {
                 appMode = 'local';
                 updateModeUI();
@@ -288,113 +234,239 @@
                     app = initializeApp(firebaseConfig);
                     auth = getAuth(app);
                     db = getFirestore(app);
-                    
-                    // Intentamos login
                     await signInAnonymously(auth);
                     
                     onAuthStateChanged(auth, (user) => {
                         if (user) {
                             loadFirebaseChismes();
                             window.requestLocation(true);
-                            // Correr diagnóstico silencioso
-                            runSilentDiagnostic(); 
                         }
                     });
                 } catch (error) {
-                    console.error("Error Inicial:", error);
-                    window.showErrorModal("Error de Inicialización", error.message);
+                    console.error("Error init:", error);
                     appMode = 'local';
                     loadLocalChismes();
                 }
             }
         }
 
-        // --- DIAGNÓSTICO ---
-        async function runSilentDiagnostic() {
-            try {
-                // Intento escribir un documento de prueba en una colección temporal
-                const diagRef = doc(db, '_diagnostics', 'test_connection_' + Date.now());
-                await setDoc(diagRef, { status: 'ok', timestamp: new Date().toISOString() });
-                console.log("Diagnóstico OK: Escritura permitida.");
-            } catch (e) {
-                console.error("Diagnóstico FALLÓ:", e);
-                window.showErrorModal("Error de Permisos (Base de Datos)", e.code + ": " + e.message);
-            }
-        }
-
-        window.retryConnection = function() {
-            location.reload();
-        }
-
-        window.showErrorModal = function(title, details) {
-            const m = document.getElementById('diag-modal');
-            m.querySelector('h2').innerText = title;
-            document.getElementById('diag-error-msg').innerText = details;
-            m.classList.remove('hidden');
-        }
-
-        // --- LÓGICA DE TÉRMINOS ---
-        function checkTerms() {
-            const accepted = localStorage.getItem('terms_accepted');
-            if (!accepted) {
-                document.getElementById('terms-modal').classList.remove('hidden');
-            }
-        }
-
-        window.acceptTerms = function() {
-            localStorage.setItem('terms_accepted', 'true');
-            document.getElementById('terms-modal').classList.add('hidden');
-            window.showToast("¡Bienvenido! Diviértete con responsabilidad.", "success");
-        };
-
         function updateModeUI() {
             const ind = document.getElementById('app-mode-indicator');
+            ind.innerHTML = appMode === 'local' 
+                ? '<i class="fa-solid fa-hdd text-orange-500"></i> Modo Local' 
+                : '<i class="fa-solid fa-cloud text-green-500"></i> En Línea';
+        }
+
+        // --- MAPA & MARCADORES ---
+        
+        function renderMarker(id, data) {
+            if (processedDocs.has(id)) return;
+            processedDocs.add(id);
+            
+            const colors = { 'picante': '#ef4444', 'amor': '#ec4899', 'barrio': '#3b82f6' };
+            const c = colors[data.category] || colors.picante;
+            const timeAgo = dayjs(data.timestamp).fromNow();
+
+            const icon = L.divIcon({
+                className: 'custom-div-icon',
+                html: `<div class="marker-pin" style="background-color:${c}">
+                        <span style="transform: rotate(45deg); font-size: 20px;">${data.authorAvatar || '💬'}</span>
+                       </div>`,
+                iconSize: [36, 36], iconAnchor: [18, 36]
+            });
+
+            const marker = L.marker([data.lat, data.lng], {icon}).addTo(map);
+            
+            // Popup mejorado con botón para abrir Hilo
+            // Usamos un truco: guardamos la data en el elemento DOM para recuperarla al abrir el hilo
+            const popupContent = document.createElement('div');
+            popupContent.className = "p-3 min-w-[240px]";
+            popupContent.innerHTML = `
+                <div class="flex items-center gap-2 mb-2 border-b border-gray-100 pb-2">
+                    <span class="text-xl bg-gray-50 rounded-full w-8 h-8 flex items-center justify-center">${data.authorAvatar || '👻'}</span>
+                    <div>
+                        <p class="text-xs font-bold text-gray-800">${data.authorNick || '@Anonimo'}</p>
+                        <p class="text-[9px] uppercase font-bold text-gray-400">${data.category} • ${timeAgo}</p>
+                    </div>
+                </div>
+                <p class="text-sm font-medium text-gray-700 leading-snug mb-3 line-clamp-3">"${data.text}"</p>
+                <button id="btn-open-${id}" class="w-full bg-gray-900 text-white text-xs font-bold py-2 rounded-lg hover:bg-black transition flex items-center justify-center gap-2">
+                    <i class="fa-brands fa-whatsapp"></i> Ver / Responder
+                </button>
+            `;
+            
+            // Event Listener para el botón dentro del popup
+            popupContent.querySelector(`#btn-open-${id}`).onclick = () => window.openThread(id, data);
+
+            marker.bindPopup(popupContent);
+        }
+
+        // --- LÓGICA DEL CHAT (HILOS) ---
+
+        window.openThread = function(id, data) {
+            activeThreadId = id;
+            const modal = document.getElementById('thread-modal');
+            const originalContainer = document.getElementById('original-post-container');
+            const repliesList = document.getElementById('replies-list');
+            
+            modal.classList.remove('hidden');
+            map.closePopup(); // Cerrar mapa
+
+            // 1. Renderizar Post Original
+            const timeFull = dayjs(data.timestamp).format('D MMM h:mm A');
+            originalContainer.innerHTML = `
+                <div class="bubble-original p-4 relative">
+                    <div class="flex justify-between items-start mb-2">
+                        <div class="flex items-center gap-2">
+                            <span class="text-2xl">${data.authorAvatar || '👻'}</span>
+                            <div>
+                                <p class="font-bold text-sm text-gray-900">${data.authorNick || '@Anonimo'}</p>
+                                <span class="text-[10px] uppercase font-bold text-white bg-gray-400 px-1.5 py-0.5 rounded">${data.category}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="text-gray-800 text-base mb-2 leading-relaxed">${data.text}</p>
+                    <p class="text-[10px] text-gray-500 text-right">${timeFull}</p>
+                </div>
+            `;
+
+            // 2. Cargar Respuestas
+            repliesList.innerHTML = '<div class="flex justify-center p-4"><i class="fa-solid fa-spinner fa-spin text-gray-400"></i></div>';
+            
             if (appMode === 'local') {
-                ind.innerHTML = '<i class="fa-solid fa-hdd text-orange-500"></i> Modo Local (Solo tú)';
+                loadLocalReplies(id);
             } else {
-                ind.innerHTML = '<i class="fa-solid fa-cloud text-green-500"></i> En Línea (Todos)';
+                loadFirebaseReplies(id);
+            }
+        };
+
+        window.closeThread = function() {
+            document.getElementById('thread-modal').classList.add('hidden');
+            activeThreadId = null;
+            if (unsubscribeReplies) unsubscribeReplies(); // Dejar de escuchar cambios
+        };
+
+        function loadFirebaseReplies(chismeId) {
+            const repliesRef = collection(db, 'chismes', chismeId, 'respuestas');
+            const q = query(repliesRef, orderBy('timestamp', 'asc'));
+
+            unsubscribeReplies = onSnapshot(q, (snapshot) => {
+                const list = document.getElementById('replies-list');
+                list.innerHTML = '';
+                
+                if (snapshot.empty) {
+                    list.innerHTML = '<p class="text-center text-gray-400 text-xs italic mt-8">Sé el primero en responder...</p>';
+                    return;
+                }
+
+                snapshot.forEach(doc => {
+                    renderReplyBubble(doc.data());
+                });
+                
+                // Scroll al fondo
+                const container = document.getElementById('chat-container');
+                container.scrollTop = container.scrollHeight;
+            });
+        }
+
+        function loadLocalReplies(chismeId) {
+            const allReplies = JSON.parse(localStorage.getItem('mx_replies_' + chismeId) || '[]');
+            const list = document.getElementById('replies-list');
+            list.innerHTML = '';
+            
+            if (allReplies.length === 0) {
+                list.innerHTML = '<p class="text-center text-gray-400 text-xs italic mt-8">Sé el primero en responder...</p>';
+            } else {
+                allReplies.forEach(r => renderReplyBubble(r));
             }
         }
 
-        // 2. LÓGICA DE DATOS (Híbrida)
+        function renderReplyBubble(data) {
+            const list = document.getElementById('replies-list');
+            const isMe = data.authorNick === userProfile.nickname; // Simple check visual
+            const timeShort = dayjs(data.timestamp).format('h:mm A');
 
-        // --- PUBLICAR ---
+            const alignClass = isMe ? 'justify-end pl-8' : 'justify-start pr-8';
+            const bubbleClass = isMe ? 'bubble-me' : 'bubble-other';
+            const metaClass = isMe ? 'flex-row-reverse' : 'flex-row';
+
+            const html = `
+                <div class="flex ${alignClass} mb-2">
+                    <div class="${bubbleClass} p-2 px-3 max-w-full min-w-[120px] relative">
+                        <!-- Header pequeño -->
+                        <div class="flex items-center gap-1 mb-1 ${metaClass} opacity-80">
+                            <span class="text-xs">${data.authorAvatar}</span>
+                            <span class="text-[10px] font-bold text-gray-600 truncate" style="color: ${stringToColor(data.authorNick)}">${data.authorNick}</span>
+                        </div>
+                        
+                        <p class="text-sm text-gray-800 leading-snug break-words">${data.text}</p>
+                        
+                        <div class="text-[9px] text-gray-400 text-right mt-1 flex items-center justify-end gap-1">
+                            ${timeShort}
+                            ${isMe ? '<i class="fa-solid fa-check-double text-blue-400"></i>' : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+            list.insertAdjacentHTML('beforeend', html);
+        }
+
+        window.submitReply = async function() {
+            const input = document.getElementById('reply-input');
+            const text = input.value.trim();
+            if (!text || !activeThreadId) return;
+
+            input.value = ''; // Limpiar inmediato
+
+            const replyData = {
+                text: text,
+                authorNick: userProfile.nickname,
+                authorAvatar: userProfile.avatar,
+                timestamp: new Date().toISOString()
+            };
+
+            if (appMode === 'local') {
+                const key = 'mx_replies_' + activeThreadId;
+                const existing = JSON.parse(localStorage.getItem(key) || '[]');
+                existing.push(replyData);
+                localStorage.setItem(key, JSON.stringify(existing));
+                loadLocalReplies(activeThreadId); // Recargar manual
+            } else {
+                try {
+                    await addDoc(collection(db, 'chismes', activeThreadId, 'respuestas'), replyData);
+                } catch (e) {
+                    console.error("Error reply:", e);
+                    window.showToast("Error al enviar respuesta", "error");
+                }
+            }
+        };
+
+
+        // --- PUBLICAR CHISME PRINCIPAL ---
+
         window.submitChisme = async function() {
             const btn = document.getElementById('btn-submit');
             const txt = document.getElementById('chisme-content').value.trim();
-            
-            if (!txt) return window.showToast("¡Escribe algo primero!", "error");
-            
-            // UI Loading
-            const textoOriginal = btn.innerHTML;
+            if (!txt) return window.showToast("Escribe algo", "error");
+            if (!userLat) { window.requestLocation(); return window.showToast("Falta ubicación", "error"); }
+
             btn.disabled = true;
-            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Guardando...';
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
 
-            if (!userLat) {
-                window.requestLocation();
-                btn.disabled = false;
-                btn.innerHTML = textoOriginal;
-                return window.showToast("Necesitamos tu ubicación", "error");
-            }
-
-            const offset = 0.003; 
+            // Ofuscación
+            const offset = 0.003;
             const safeLat = userLat + (Math.random() - 0.5) * offset;
             const safeLng = userLng + (Math.random() - 0.5) * offset;
 
             const newChisme = {
-                text: txt, 
+                text: txt,
                 category: currentCategory,
                 lat: safeLat, lng: safeLng,
-                timestamp: new Date().toISOString(), 
+                timestamp: new Date().toISOString(),
                 likes: 0,
                 authorNick: userProfile.nickname,
                 authorAvatar: userProfile.avatar
             };
-
-            // TIMEOUT DE SEGURIDAD (5 segundos)
-            const timeoutPromise = new Promise((_, reject) => 
-                setTimeout(() => reject(new Error("timeout")), 5000)
-            );
 
             try {
                 if (appMode === 'local') {
@@ -402,168 +474,108 @@
                     localData.push(newChisme);
                     localStorage.setItem('mx_chismes_data', JSON.stringify(localData));
                     renderMarker('local_' + Date.now(), newChisme);
-                    window.showToast("¡Guardado en tu dispositivo!", "success");
                 } else {
-                    if (!auth.currentUser) throw new Error("No autenticado (Auth User is null).");
-
-                    // Carrera entre Guardar y Timeout
-                    await Promise.race([
-                        addDoc(collection(db, 'chismes'), newChisme),
-                        timeoutPromise
-                    ]);
-                    
-                    window.showToast("¡Publicado en la nube!", "success");
+                    await addDoc(collection(db, 'chismes'), newChisme);
                 }
-                
-                document.getElementById('chisme-content').value = "";
-                document.getElementById('char-counter').innerText = "0 / 500";
                 window.closePostModal();
-
+                document.getElementById('chisme-content').value = "";
+                window.showToast("Publicado", "success");
             } catch (e) {
-                console.error("Error al publicar:", e);
-                
-                if (e.message === 'timeout') {
-                    window.showErrorModal("Tiempo de espera agotado", "La base de datos no responde. Probablemente no has creado la base de datos o las reglas bloquean la escritura.");
-                } else if (e.code === 'permission-denied') {
-                    window.showErrorModal("Permiso Denegado", "Reglas de Firestore insuficientes. Configura 'allow read, write: if true;' para pruebas.");
-                } else {
-                    window.showToast("Error: " + e.message, "error");
-                }
+                window.showToast("Error: " + e.message, "error");
             } finally {
                 btn.disabled = false;
-                btn.innerHTML = textoOriginal;
+                btn.innerText = "Publicar";
             }
         };
 
         // --- CARGAR DATOS ---
+        
         function loadLocalChismes() {
             const localData = JSON.parse(localStorage.getItem('mx_chismes_data') || '[]');
-            localData.forEach((data, index) => renderMarker('local_' + index, data));
+            localData.forEach((d, i) => renderMarker('local_' + i, d));
         }
 
         function loadFirebaseChismes() {
-            onSnapshot(collection(db, 'chismes'), (snap) => {
+            // Ordenar por fecha (más reciente primero) requiere índice, 
+            // pero para evitar errores en modo prueba, cargamos simple y el cliente renderiza
+            const q = query(collection(db, 'chismes')); 
+            onSnapshot(q, (snap) => {
                 snap.docChanges().forEach(c => {
                     if (c.type === "added") renderMarker(c.doc.id, c.doc.data());
                 });
             });
         }
 
-        // 3. UI & HELPERS
-        function renderMarker(id, data) {
-            if (processedDocs.has(id)) return;
-            processedDocs.add(id);
-            
-            const colors = { 'picante': '#ef4444', 'amor': '#ec4899', 'barrio': '#3b82f6' };
-            const c = colors[data.category] || colors.picante;
-            const nick = data.authorNick || "@Anonimo";
+        // --- UI UTILS ---
 
-            const iconContent = data.authorAvatar 
-                ? `<span style="transform: rotate(45deg); font-size: 20px;">${data.authorAvatar}</span>` 
-                : `<i class="fa-solid fa-comment text-white" style="transform: rotate(45deg);"></i>`;
-
-            const icon = L.divIcon({
-                className: 'custom-div-icon',
-                html: `<div class="marker-pin" style="background-color:${c}">${iconContent}</div>`,
-                iconSize: [36, 36], iconAnchor: [18, 36]
-            });
-
-            const marker = L.marker([data.lat, data.lng], {icon}).addTo(map);
-            
-            const popupContent = `
-                <div class="p-3 min-w-[220px]">
-                    <div class="flex items-center gap-2 mb-2 border-b border-gray-100 pb-2">
-                        <span class="text-xl bg-gray-50 rounded-full w-8 h-8 flex items-center justify-center">${data.authorAvatar || '👻'}</span>
-                        <div>
-                            <p class="text-xs font-bold text-gray-800">${nick}</p>
-                            <p class="text-[9px] uppercase font-bold text-gray-400 tracking-wider">${data.category}</p>
-                        </div>
-                    </div>
-                    <p class="text-sm font-medium text-gray-700 leading-snug mb-2">"${data.text}"</p>
-                    <div class="flex justify-between items-center mt-1">
-                         <span class="text-[10px] text-gray-400 italic">${appMode === 'local' ? 'Solo visible para ti' : 'Público'}</span>
-                    </div>
-                </div>
-            `;
-            marker.bindPopup(popupContent);
+        // Generar color consistente para nombres
+        function stringToColor(str) {
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) { hash = str.charCodeAt(i) + ((hash << 5) - hash); }
+            const c = (hash & 0x00FFFFFF).toString(16).toUpperCase();
+            return '#' + "00000".substring(0, 6 - c.length) + c;
         }
 
-        // Perfil & Config
-        function loadProfileFromStorage() {
-            const stored = localStorage.getItem('chismes_profile');
-            if (stored) {
-                userProfile = JSON.parse(stored);
-                updateHeaderUI();
-            }
-        }
-
-        function updateHeaderUI() {
-            document.getElementById('header-avatar-preview').innerText = userProfile.avatar;
-            document.getElementById('posting-as-preview').innerText = userProfile.nickname;
-        }
-
-        window.openProfileModal = function() {
-            document.getElementById('profile-modal').classList.remove('hidden');
-            document.getElementById('nickname-input').value = userProfile.nickname.replace('@', '');
-        };
-
-        window.saveProfile = function() {
-            const nickInput = document.getElementById('nickname-input').value.trim();
-            const finalNick = nickInput ? '@' + nickInput : '@AnonimoMX';
-            const finalAvatar = window.tempAvatar || userProfile.avatar;
-            userProfile = { nickname: finalNick, avatar: finalAvatar };
-            localStorage.setItem('chismes_profile', JSON.stringify(userProfile));
-            updateHeaderUI();
-            document.getElementById('profile-modal').classList.add('hidden');
-            window.showToast("¡Identidad actualizada!", "success");
-        };
-
-        window.selectAvatar = function(emoji, element) {
-            document.querySelectorAll('.avatar-option').forEach(el => el.classList.remove('selected'));
-            element.classList.add('selected');
-            window.tempAvatar = emoji; 
-        };
-
-        // Utilidades Ventanas
         window.openPostModal = () => document.getElementById('post-modal').classList.remove('hidden');
         window.closePostModal = () => document.getElementById('post-modal').classList.add('hidden');
+        
+        window.openProfileModal = () => {
+            document.getElementById('profile-modal').classList.remove('hidden');
+            document.getElementById('nickname-input').value = userProfile.nickname.replace('@','');
+        };
         window.closeProfileModal = () => document.getElementById('profile-modal').classList.add('hidden');
+
+        window.saveProfile = () => {
+            const nick = document.getElementById('nickname-input').value.trim();
+            userProfile.nickname = nick ? '@' + nick : '@Anonimo';
+            if(window.tempAvatar) userProfile.avatar = window.tempAvatar;
+            localStorage.setItem('chismes_profile', JSON.stringify(userProfile));
+            document.getElementById('header-avatar-preview').innerText = userProfile.avatar;
+            document.getElementById('posting-as-preview').innerText = userProfile.nickname;
+            window.closeProfileModal();
+        };
+
+        window.selectAvatar = (emoji, el) => {
+            document.querySelectorAll('.avatar-option').forEach(e => e.classList.remove('selected'));
+            el.classList.add('selected');
+            window.tempAvatar = emoji;
+        };
+
         window.selectCategory = (cat, btn) => {
             currentCategory = cat;
             document.querySelectorAll('.category-btn').forEach(b => b.classList.remove('active', 'ring-2'));
             btn.classList.add('active', 'ring-2');
         };
 
-        window.requestLocation = function(silent = false) {
-            if (!navigator.geolocation) return;
-            if(!silent) window.showToast("Buscando señal GPS...", "info");
+        function loadProfileFromStorage() {
+            const s = localStorage.getItem('chismes_profile');
+            if(s) {
+                userProfile = JSON.parse(s);
+                document.getElementById('header-avatar-preview').innerText = userProfile.avatar;
+                document.getElementById('posting-as-preview').innerText = userProfile.nickname;
+            }
+        }
+
+        window.requestLocation = (silent) => {
+            if(!navigator.geolocation) return;
+            if(!silent) window.showToast("Buscando...", "info");
             navigator.geolocation.getCurrentPosition(
                 (pos) => {
-                    userLat = pos.coords.latitude;
-                    userLng = pos.coords.longitude;
+                    userLat = pos.coords.latitude; userLng = pos.coords.longitude;
                     map.flyTo([userLat, userLng], 15);
-                    if(!silent) window.showToast("Ubicación encontrada", "success");
+                    if(!silent) window.showToast("¡Encontrado!", "success");
                 },
-                () => { if(!silent) window.showToast("No se pudo obtener ubicación", "error"); }
+                () => { if(!silent) window.showToast("Error GPS", "error"); }
             );
         };
 
         window.showToast = (msg, type) => {
             const t = document.getElementById('toast');
-            const icon = document.getElementById('toast-icon');
             document.getElementById('toast-msg').innerText = msg;
-            
-            if(type === 'error') {
-                icon.className = "fa-solid fa-circle-exclamation text-red-400 text-lg";
-                icon.style.color = "#f87171";
-            } else if (type === 'success') {
-                icon.className = "fa-solid fa-check-circle text-green-400 text-lg";
-                icon.style.color = "#4ade80";
-            } else {
-                icon.className = "fa-solid fa-info-circle text-blue-400 text-lg";
-            }
-            t.classList.remove('opacity-0', 'pointer-events-none', '-translate-y-4');
-            setTimeout(() => t.classList.add('opacity-0', 'pointer-events-none', '-translate-y-4'), 3000);
+            const icon = document.getElementById('toast-icon');
+            icon.className = type === 'error' ? "fa-solid fa-circle-exclamation text-red-400" : "fa-solid fa-check-circle text-green-400";
+            t.classList.remove('opacity-0', '-translate-y-4');
+            setTimeout(() => t.classList.add('opacity-0', '-translate-y-4'), 3000);
         };
 
         function initMap() {
@@ -571,9 +583,7 @@
             L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_labels_under/{z}/{x}/{y}{r}.png', { attribution: '&copy; OpenStreetMap' }).addTo(map);
         }
 
-        // Arrancar
         initApp();
-
     </script>
 </body>
 </html>
